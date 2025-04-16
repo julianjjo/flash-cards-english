@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import AdminLogin from './AdminLogin';
 
-const API_URL = 'http://localhost:4000/api/cards';
+const API_URL = '\/api/cards';
 
 function Admin() {
   const [regenerating, setRegenerating] = useState({});
@@ -34,7 +34,7 @@ function Admin() {
   ];
 
   const fetchDueCards = () => {
-    fetch('http://localhost:4000/api/cards/next', {
+    fetch('\/api/cards\/next', {
       headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` }
     })
       .then(res => res.json())
@@ -167,7 +167,7 @@ function Admin() {
                     <button
                       className="ml-4 px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition"
                       onClick={async () => {
-                        await fetch(`http://localhost:4000/api/cards/${card.id}/review`, { method: 'POST', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } });
+                        await fetch(`/api/cards/${card.id}/review`, { method: 'POST', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } });
                         fetchDueCards();
                         fetchCards();
                       }}

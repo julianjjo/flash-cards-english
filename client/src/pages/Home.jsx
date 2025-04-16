@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const API_URL = 'http://localhost:4000/api/cards';
+const API_URL = '\/api/cards';
 
 function spacedRepetition(card) {
   if (!card.nextReview) return true;
@@ -21,7 +21,7 @@ function Home() {
   const audioRef = React.useRef(null);
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/cards/next')
+    fetch('\/api/cards\/next')
       .then(res => res.json())
       .then(data => {
         setCards(data);
@@ -47,7 +47,7 @@ function Home() {
       setCurrent(0);
       if (newCards.length === 0) {
         setLoading(true);
-        fetch('http://localhost:4000/api/cards/next')
+        fetch('\/api/cards\/next')
           .then(res => res.json())
           .then(data => {
             setCards(data);
