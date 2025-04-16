@@ -1,0 +1,19 @@
+# Node
+node_modules/
+.env
+*.log
+
+# SQLite/DB
+server/flashcards.db
+
+# Build output
+client/dist/
+
+# System
+.DS_Store
+
+# Test
+coverage/
+
+# Vite
+client/.vite
