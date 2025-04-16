@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
 
@@ -11,6 +12,22 @@ dotenv.config();
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
 const ELEVENLABS_MODEL_ID = 'eleven_multilingual_v2';
+
+// Cloudflare R2 config
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET = process.env.R2_BUCKET;
+const R2_ENDPOINT = process.env.R2_ENDPOINT;
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL; // e.g. https://<accountid>.r2.cloudflarestorage.com/<bucket>
+
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: R2_ENDPOINT,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+  },
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +40,84 @@ app.locals.db = db;
 
 app.use(cors());
 app.use(express.json());
+
+// Middleware de autenticación básica para admin
+function adminAuth(req, res, next) {
+  // Solo proteger rutas /api/cards y /audio
+  if (!req.path.startsWith('/api/cards') && !req.path.startsWith('/audio')) return next();
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
+    return res.status(401).send('Auth required');
+  }
+  const b64 = auth.split(' ')[1];
+  const [user, pass] = Buffer.from(b64, 'base64').toString().split(':');
+  if (user === process.env.ADMIN_USER && pass === process.env.ADMIN_PASS) {
+    return next();
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
+  return res.status(401).send('Invalid credentials');
+}
+app.use(adminAuth);
+
+// Regenerar audio para una tarjeta
+app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
+  const cardId = req.params.id;
+  try {
+    // Buscar tarjeta
+    db.get('SELECT * FROM cards WHERE id = ?', [cardId], async (err, card) => {
+      if (err || !card) return res.status(404).json({ error: 'Tarjeta no encontrada' });
+      // Generar audio con ElevenLabs
+      const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + process.env.ELEVENLABS_VOICE_ID, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: card.en,
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      });
+      if (!elevenRes.ok) return res.status(500).json({ error: 'Error generando audio' });
+      const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
+      const filename = `card_${Date.now()}.mp3`;
+      // Subir a R2
+      await s3Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: filename,
+        Body: audioBuffer,
+        ContentType: 'audio/mpeg',
+      }));
+      // Actualizar en la base de datos
+      db.run('UPDATE cards SET audio_url = ? WHERE id = ?', [filename, cardId], err2 => {
+        if (err2) return res.status(500).json({ error: 'Error guardando audio' });
+        res.json({ audio_url: filename });
+      });
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Error regenerando audio' });
+  }
+});
+
+// Endpoint para servir audios desde R2
+app.get('/audio/:filename', async (req, res) => {
+  const { filename } = req.params;
+  try {
+    const command = new GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: filename,
+    });
+    const data = await s3Client.send(command);
+    res.set('Content-Type', 'audio/mpeg');
+    // Cloudflare R2 SDK: data.Body es un stream
+    data.Body.pipe(res);
+  } catch (err) {
+    console.error('Error al obtener el archivo:', err);
+    res.status(404).send('Audio no encontrado');
+  }
+});
+
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 // Crear tabla si no existe (ahora con audio_url)
@@ -83,14 +178,20 @@ app.post('/api/cards', async (req, res) => {
         throw new Error('Error generando audio ElevenLabs');
       }
       const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
-      // Asegura carpeta audio
-      const audioDir = path.join(__dirname, 'audio');
-      if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir);
-      // Guarda archivo
+      // Sube a Cloudflare R2
       const filename = `card_${Date.now()}.mp3`;
-      const filePath = path.join(audioDir, filename);
-      fs.writeFileSync(filePath, audioBuffer);
-      audio_url = `/audio/${filename}`;
+      try {
+        await s3Client.send(new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: filename,
+          Body: audioBuffer,
+          ContentType: 'audio/mpeg',
+        }));
+        audio_url = `${R2_PUBLIC_URL}/${filename}`;
+      } catch (uploadErr) {
+        console.error('Error subiendo a R2:', uploadErr);
+        audio_url = null;
+      }
     } catch (err) {
       console.error('No se pudo generar audio:', err);
       audio_url = null;

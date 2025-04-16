@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import AdminLogin from './AdminLogin';
 
 const API_URL = 'http://localhost:4000/api/cards';
 
 function Admin() {
+  const [regenerating, setRegenerating] = useState({});
+  const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem('admin_auth'));
+  // Si no está logueado, mostrar el login
+  if (!loggedIn) return <AdminLogin onLogin={() => setLoggedIn(true)} />;
+
   const [cards, setCards] = useState([]);
   const [page, setPage] = useState(1);
   const CARDS_PER_PAGE = 10;
@@ -28,7 +34,9 @@ function Admin() {
   ];
 
   const fetchDueCards = () => {
-    fetch('http://localhost:4000/api/cards/next')
+    fetch('http://localhost:4000/api/cards/next', {
+      headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` }
+    })
       .then(res => res.json())
       .then(data => setDueCards(data));
   };
@@ -44,7 +52,9 @@ function Admin() {
 
   const fetchCards = () => {
     setLoading(true);
-    fetch(API_URL)
+    fetch(API_URL, {
+      headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` }
+    })
       .then(res => res.json())
       .then(data => {
         setCards(data);
@@ -72,7 +82,10 @@ function Admin() {
       // Editar
       fetch(`${API_URL}/${editId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(form)
       }).then(() => {
         setForm({ en: '', es: '' });
@@ -83,7 +96,10 @@ function Admin() {
       // Crear
       fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(form)
       }).then(() => {
         setForm({ en: '', es: '' });
@@ -100,7 +116,7 @@ function Admin() {
 
   const handleDelete = id => {
     if (!window.confirm('¿Eliminar esta tarjeta?')) return;
-    fetch(`${API_URL}/${id}`, { method: 'DELETE' }).then(fetchCards);
+    fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } }).then(fetchCards);
   };
 
   const handleCancel = () => {
@@ -151,7 +167,7 @@ function Admin() {
                     <button
                       className="ml-4 px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition"
                       onClick={async () => {
-                        await fetch(`http://localhost:4000/api/cards/${card.id}/review`, { method: 'POST' });
+                        await fetch(`http://localhost:4000/api/cards/${card.id}/review`, { method: 'POST', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } });
                         fetchDueCards();
                         fetchCards();
                       }}
@@ -227,6 +243,27 @@ function Admin() {
                 </span>
                 <span className="flex gap-2">
                   <button
+                    className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
+                    onClick={async () => {
+                      setRegenerating(r => ({ ...r, [card.id]: true }));
+                      try {
+                        const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
+                          method: 'POST',
+                          headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                        });
+                        if (!res.ok) throw new Error('Error regenerando audio');
+                        const data = await res.json();
+                        setCards(cards => cards.map(c => c.id === card.id ? { ...c, audio_url: data.audio_url } : c));
+                      } catch (e) {
+                        alert('Error regenerando audio');
+                      } finally {
+                        setRegenerating(r => ({ ...r, [card.id]: false }));
+                      }
+                    }}
+                  > {regenerating[card.id] ? (
+  <svg className="animate-spin h-4 w-4 inline-block mr-1 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+) : null}Regenerar audio</button>
+                  <button
                     className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
                     onClick={() => handleEdit(card)}
                   >
@@ -244,7 +281,10 @@ function Admin() {
                       const now = new Date().toISOString();
                       await fetch(`${API_URL}/${card.id}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+                          'Content-Type': 'application/json',
+                        },
                         body: JSON.stringify({
                           en: card.en,
                           es: card.es,
