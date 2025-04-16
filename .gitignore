@@ -17,3 +17,6 @@ coverage/
 
 # Vite
 client/.vite
+
+# Audio
+client/audio

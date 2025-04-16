@@ -104,7 +104,7 @@ function Home() {
           </button>
           <audio
             ref={audioRef}
-            src={`http://localhost:4000${card.audio_url}`}
+            src={card.audio_url ? `/audio/${card.audio_url.replace(/^.*[\\\/]/, '')}` : ''}
             onEnded={() => setPlaying(false)}
             preload="auto"
           />
