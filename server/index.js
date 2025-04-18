@@ -7,6 +7,9 @@ import path from 'path';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
+import multer from 'multer';
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -35,10 +38,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 4000;
 
-
-app.use(cors());
-app.use(express.json());
-
 // Middleware de autenticación básica para admin
 function adminAuth(req, res, next) {
   // Solo proteger rutas /api/cards y /audio
@@ -58,46 +57,12 @@ function adminAuth(req, res, next) {
 }
 app.use(adminAuth);
 
-// Regenerar audio para una tarjeta
-app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
-  const cardId = req.params.id;
-  try {
-    // Buscar tarjeta en D1
-    const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [cardId]);
-    const card = selectRes.results?.[0] || null;
-    if (!card) return res.status(404).json({ error: 'Tarjeta no encontrada' });
-    // Generar audio con ElevenLabs
-    const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + process.env.ELEVENLABS_VOICE_ID, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: card.en,
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-        }),
-      });
-      if (!elevenRes.ok) return res.status(500).json({ error: 'Error generando audio' });
-      const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
-      const filename = `card_${Date.now()}.mp3`;
-      // Subir a R2
-      await s3Client.send(new PutObjectCommand({
-        Bucket: R2_BUCKET,
-        Key: filename,
-        Body: audioBuffer,
-        ContentType: 'audio/mpeg',
-      }));
-      // Actualizar en la base de datos D1
-      await queryD1('UPDATE cards SET audio_url = ? WHERE id = ?', [filename, cardId]);
-      res.json({ audio_url: filename });
-  } catch (e) {
-    res.status(500).json({ error: 'Error regenerando audio' });
-  }
-});
+app.use(cors());
+app.use(express.json());
 
 // Endpoint para servir audios desde R2
 app.get('/audio/:filename', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const { filename } = req.params;
   try {
     const command = new GetObjectCommand({
@@ -135,6 +100,7 @@ app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 // GET todas las tarjetas
 app.get('/api/cards', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     const result = await queryD1('SELECT * FROM cards');
     res.json(result.results || []);
@@ -144,7 +110,7 @@ app.get('/api/cards', async (req, res) => {
 });
 
 // POST nueva tarjeta (genera audio)
-app.post('/api/cards', async (req, res) => {
+app.post('/api/cards', upload.single('audio'), async (req, res) => {
   const { en, es } = req.body;
   if (!en || !es) return res.status(400).send('Faltan campos');
   let audio_url = null;
@@ -213,7 +179,7 @@ app.post('/api/cards', async (req, res) => {
 });
 
 // PUT actualizar tarjeta
-app.put('/api/cards/:id', async (req, res) => {
+app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
   const { en, es, level, nextReview } = req.body;
   const id = req.params.id;
   const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
@@ -280,6 +246,7 @@ app.delete('/api/cards/:id', async (req, res) => {
 
 // GET cards próximas a repasar
 app.get('/api/cards/next', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const now = new Date().toISOString();
   try {
     const result = await queryD1('SELECT * FROM cards WHERE nextReview IS NOT NULL AND nextReview <= ? ORDER BY nextReview ASC', [now]);
@@ -328,6 +295,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(clientBuildPath));
   // Redirige cualquier ruta que no sea API a index.html
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     if (!req.path.startsWith('/api') && !req.path.startsWith('/audio')) {
       res.sendFile(path.join(clientBuildPath, 'index.html'));
     }

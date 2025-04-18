@@ -15,6 +15,8 @@ function Admin() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ en: '', es: '' });
   const [editId, setEditId] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
+  const [existingAudio, setExistingAudio] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [dueCards, setDueCards] = useState([]);
@@ -70,6 +72,10 @@ function Admin() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleAudioChange = e => {
+    setAudioFile(e.target.files[0] || null);
+  };
+
   const handleSubmit = e => {
     e.preventDefault();
     if (!form.en.trim() || !form.es.trim()) {
@@ -78,40 +84,44 @@ function Admin() {
     }
     setError('');
     setSubmitting(true);
-    if (editId) {
-      // Editar
-      fetch(`${API_URL}/${editId}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(form)
-      }).then(() => {
+    const headers = { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` };
+    let body, contentType;
+    if (audioFile) {
+      // Usar FormData si hay audio
+      const fd = new FormData();
+      fd.append('en', form.en);
+      fd.append('es', form.es);
+      fd.append('audio', audioFile);
+      body = fd;
+      // No seteamos content-type, el navegador lo hace
+      contentType = undefined;
+    } else {
+      body = JSON.stringify(form);
+      contentType = 'application/json';
+    }
+    const opts = {
+      method: editId ? 'PUT' : 'POST',
+      headers: contentType ? { ...headers, 'Content-Type': contentType } : headers,
+      body
+    };
+    const url = editId ? `${API_URL}/${editId}` : API_URL;
+    fetch(url, opts)
+      .then(() => {
         setForm({ en: '', es: '' });
         setEditId(null);
+        setAudioFile(null);
+        setExistingAudio(null);
         fetchCards();
-      }).finally(() => setSubmitting(false));
-    } else {
-      // Crear
-      fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(form)
-      }).then(() => {
-        setForm({ en: '', es: '' });
-        fetchCards();
-      }).finally(() => setSubmitting(false));
-    }
+      })
+      .finally(() => setSubmitting(false));
   };
 
   const handleEdit = card => {
     setForm({ en: card.en, es: card.es });
     setEditId(card.id);
     setError('');
+    setExistingAudio(card.audio_url || null);
+    setAudioFile(null);
   };
 
   const handleDelete = id => {
@@ -123,6 +133,8 @@ function Admin() {
     setForm({ en: '', es: '' });
     setEditId(null);
     setError('');
+    setAudioFile(null);
+    setExistingAudio(null);
   };
 
   return (
@@ -190,7 +202,7 @@ function Admin() {
           </ul>
         )}
       </div>
-      <form onSubmit={handleSubmit} className="bg-white shadow rounded p-4 mb-6 flex flex-col gap-2">
+      <form onSubmit={handleSubmit} className="bg-white shadow rounded p-6 flex flex-col gap-4 mb-8">
         <div className="flex gap-2">
           <input
             type="text"
@@ -210,16 +222,18 @@ function Admin() {
             onChange={handleChange}
           />
         </div>
+        <div className="flex flex-col gap-1">
+          <label className="font-medium">Audio (opcional):</label>
+          <input type="file" accept="audio/*" onChange={handleAudioChange} />
+          {audioFile && <span className="text-xs text-gray-600">Archivo: {audioFile.name}</span>}
+          {existingAudio && !audioFile && (
+            <span className="text-xs text-green-700">Ya existe audio. Si seleccionas uno nuevo, lo reemplazas.</span>
+          )}
+        </div>
         {error && <div className="text-red-500 text-sm">{error}</div>}
         <div className="flex gap-2 mt-2">
-          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center justify-center gap-2 min-w-[120px]" disabled={submitting}>
-            {submitting && (
-              <svg data-testid="loading" className="animate-spin h-5 w-5 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-              </svg>
-            )}
-            <span>{editId ? 'Actualizar' : 'Agregar'}</span>
+          <button type="submit" className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700" disabled={submitting}>
+            {submitting ? 'Guardando...' : editId ? 'Actualizar' : 'Agregar'}
           </button>
           {editId && (
             <button type="button" onClick={handleCancel} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 transition">
