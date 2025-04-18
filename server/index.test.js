@@ -26,6 +26,7 @@ describe('Cards API', () => {
   test('POST /api/cards crea una tarjeta', async () => {
     const res = await request(app)
       .post('/api/cards')
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
       .send({ en: 'test', es: 'prueba' });
     expect(res.statusCode).toBe(201);
     expect(res.body.en).toBe('test');
@@ -34,7 +35,9 @@ describe('Cards API', () => {
   });
 
   test('GET /api/cards retorna tarjetas', async () => {
-    const res = await request(app).get('/api/cards');
+    const res = await request(app)
+      .get('/api/cards')
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS);
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
@@ -42,6 +45,7 @@ describe('Cards API', () => {
   test('PUT /api/cards/:id actualiza una tarjeta', async () => {
     const res = await request(app)
       .put(`/api/cards/${createdId}`)
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
       .send({ en: 'editado', es: 'editado', level: 1, nextReview: new Date().toISOString(), audio_url: null });
     expect(res.statusCode).toBe(200);
     expect(res.body.en).toBe('editado');
@@ -50,6 +54,7 @@ describe('Cards API', () => {
   test('POST /api/cards/:id/review actualiza nextReview y level', async () => {
     const res = await request(app)
       .post(`/api/cards/${createdId}/review`)
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
       .send();
     expect(res.statusCode).toBe(200);
     expect(res.body.level).toBe(2); // porque ya lo subimos a 1 antes

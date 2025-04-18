@@ -17,7 +17,26 @@ if (!isTestEnv) {
   }
 }
 
+import app from './index.js';
+
 export async function queryD1(sql, params = []) {
+  if (isTestEnv && app.locals.db) {
+    // Ejecuta sobre la base de datos SQLite en memoria
+    try {
+      const stmt = app.locals.db.prepare(sql);
+      let result;
+      if (sql.trim().toLowerCase().startsWith('select')) {
+        result = stmt.all(...params);
+        return { results: result };
+      } else {
+        result = stmt.run(...params);
+        return { lastInsertRowid: result.lastInsertRowid };
+      }
+    } catch (e) {
+      throw new Error('SQLite error: ' + e.message);
+    }
+  }
+  // Si no es test, usa Cloudflare D1
   const res = await fetch(`${D1_URL}/query`, {
     method: 'POST',
     headers: {
@@ -32,3 +51,4 @@ export async function queryD1(sql, params = []) {
   }
   return res.json();
 }
+

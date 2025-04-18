@@ -4,7 +4,7 @@
   "main": "server/index.js",
   "type": "module",
   "scripts": {
-    "test:back": "jest --runInBand",
+    "test:back": "node --experimental-vm-modules node_modules/.bin/jest --runInBand",
     "test:front": "npm test --prefix client",
     "test": "npm run test:back && npm run test:front",
     "build": "npm --prefix client run build",
@@ -27,6 +27,9 @@
     "tailwindcss": "^4.1.4"
   },
   "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "babel-jest": "^29.7.0",
     "concurrently": "^8.2.2",
     "jest": "^29.7.0",
     "supertest": "^7.1.0"
