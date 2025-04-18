@@ -8,7 +8,7 @@
     "test:front": "npm test --prefix client",
     "test": "npm run test:back && npm run test:front",
     "build": "npm --prefix client run build",
-    "start": "node server/index.js",
+    "start": "node server/server.js",
     "postinstall": "npm install --include=dev --prefix client && npm run build --include=dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server/index.js",
