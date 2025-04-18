@@ -2,10 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { queryD1 } from './cloudflare-d1.js';
 import dotenv from 'dotenv';
-
-dotenv.config();
-console.log('DEBUG ENV D1_URL:', process.env.D1_URL);
-console.log('DEBUG ENV D1_API_KEY:', process.env.D1_API_KEY);
 import fs from 'fs';
 import path from 'path';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
