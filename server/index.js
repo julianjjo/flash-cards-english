@@ -79,7 +79,11 @@ app.get('/audio/:filename', async (req, res) => {
   }
 });
 
-app.use('/audio', express.static(path.join(__dirname, 'audio')));
+// Servir archivos locales SOLO en test (por compatibilidad)
+const isTest = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
+if (isTest) {
+  app.use('/audio', express.static(path.join(__dirname, 'audio')));
+}
 
 // Crear tabla si no existe (ahora con audio_url)
 // Cloudflare D1: crea la tabla si no existe
@@ -210,12 +214,15 @@ app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
       );
       if (!elevenRes.ok) throw new Error('Error generando audio ElevenLabs');
       const audioBuffer = await elevenRes.arrayBuffer();
-      const audioDir = path.join(__dirname, 'audio');
-      if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir);
       const filename = `card_${Date.now()}.mp3`;
-      const filePath = path.join(audioDir, filename);
-      fs.writeFileSync(filePath, Buffer.from(audioBuffer));
-      audio_url = `/audio/${filename}`;
+      // Subir a Cloudflare R2
+      await s3Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: filename,
+        Body: Buffer.from(audioBuffer),
+        ContentType: 'audio/mpeg',
+      }));
+      audio_url = `${R2_PUBLIC_URL}/${filename}`;
     } catch (err) {
       console.error('No se pudo regenerar audio:', err);
       audio_url = null;
