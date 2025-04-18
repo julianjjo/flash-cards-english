@@ -103,7 +103,8 @@ app.get('/api/cards', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const result = await queryD1('SELECT * FROM cards');
-    res.json(result.results || []);
+    const data = result.result?.[0]?.results || [];
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -250,7 +251,8 @@ app.get('/api/cards/next', async (req, res) => {
   const now = new Date().toISOString();
   try {
     const result = await queryD1('SELECT * FROM cards WHERE nextReview IS NOT NULL AND nextReview <= ? ORDER BY nextReview ASC', [now]);
-    res.json(result.results || []);
+    const data = result.result?.[0]?.results || [];
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
