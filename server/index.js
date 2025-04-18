@@ -185,12 +185,19 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
   }
 });
 
+// Utilidad para extraer el primer resultado de queryD1, compatible con test y producción
+function getFirstResult(res) {
+  if (res.results) return res.results[0] || null; // test/local
+  if (res.result && Array.isArray(res.result)) return res.result[0]?.results?.[0] || null; // prod/D1
+  return null;
+}
+
 // PUT actualizar tarjeta
 app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
   const { en, es, level, nextReview } = req.body;
   const id = req.params.id;
   const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
-  const card = selectRes.results?.[0] || null;
+  const card = getFirstResult(selectRes);
   if (!card) return res.status(404).send('Not found');
 
   let audio_url = card.audio_url;
@@ -240,7 +247,7 @@ app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
     WHERE id = ?
   `, [en, es, level, nextReview, audio_url, id]);
   const updatedRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
-  const updated = updatedRes.results?.[0] || null;
+  const updated = getFirstResult(updatedRes);
   res.json(updated);
 });
 
