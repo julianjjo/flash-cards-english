@@ -1,7 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import Database from 'better-sqlite3';
+import { queryD1 } from './cloudflare-d1.js';
 import dotenv from 'dotenv';
+
+dotenv.config();
+console.log('DEBUG ENV D1_URL:', process.env.D1_URL);
+console.log('DEBUG ENV D1_API_KEY:', process.env.D1_API_KEY);
 import fs from 'fs';
 import path from 'path';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -34,9 +38,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 4000;
-const isTestEnv = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
-const db = isTestEnv ? new Database(':memory:') : new Database('./server/flashcards.db');
-app.locals.db = db;
+
 
 app.use(cors());
 app.use(express.json());
@@ -64,18 +66,19 @@ app.use(adminAuth);
 app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
   const cardId = req.params.id;
   try {
-    // Buscar tarjeta
-    db.get('SELECT * FROM cards WHERE id = ?', [cardId], async (err, card) => {
-      if (err || !card) return res.status(404).json({ error: 'Tarjeta no encontrada' });
-      // Generar audio con ElevenLabs
-      const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + process.env.ELEVENLABS_VOICE_ID, {
-        method: 'POST',
-        headers: {
-          'xi-api-key': process.env.ELEVENLABS_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: card.en,
+    // Buscar tarjeta en D1
+    const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [cardId]);
+    const card = selectRes.results?.[0] || null;
+    if (!card) return res.status(404).json({ error: 'Tarjeta no encontrada' });
+    // Generar audio con ElevenLabs
+    const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + process.env.ELEVENLABS_VOICE_ID, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: card.en,
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }),
       });
@@ -89,12 +92,9 @@ app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
         Body: audioBuffer,
         ContentType: 'audio/mpeg',
       }));
-      // Actualizar en la base de datos
-      db.run('UPDATE cards SET audio_url = ? WHERE id = ?', [filename, cardId], err2 => {
-        if (err2) return res.status(500).json({ error: 'Error guardando audio' });
-        res.json({ audio_url: filename });
-      });
-    });
+      // Actualizar en la base de datos D1
+      await queryD1('UPDATE cards SET audio_url = ? WHERE id = ?', [filename, cardId]);
+      res.json({ audio_url: filename });
   } catch (e) {
     res.status(500).json({ error: 'Error regenerando audio' });
   }
@@ -121,27 +121,30 @@ app.get('/audio/:filename', async (req, res) => {
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
 // Crear tabla si no existe (ahora con audio_url)
-const createTable = `CREATE TABLE IF NOT EXISTS cards (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  en TEXT NOT NULL,
-  es TEXT NOT NULL,
-  level INTEGER DEFAULT 0,
-  nextReview TEXT,
-  audio_url TEXT
-);`;
-db.prepare(createTable).run();
-
-// Agregar columna audio_url si falta
-try {
-  db.prepare('SELECT audio_url FROM cards LIMIT 1').get();
-} catch (e) {
-  db.prepare('ALTER TABLE cards ADD COLUMN audio_url TEXT').run();
-}
+// Cloudflare D1: crea la tabla si no existe
+(async () => {
+  try {
+    await queryD1(`CREATE TABLE IF NOT EXISTS cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      en TEXT NOT NULL,
+      es TEXT NOT NULL,
+      level INTEGER DEFAULT 0,
+      nextReview TEXT,
+      audio_url TEXT
+    );`);
+  } catch (e) {
+    console.error('Error creando tabla en D1:', e);
+  }
+})();
 
 // GET todas las tarjetas
-app.get('/api/cards', (req, res) => {
-  const cards = db.prepare('SELECT * FROM cards').all();
-  res.json(cards);
+app.get('/api/cards', async (req, res) => {
+  try {
+    const result = await queryD1('SELECT * FROM cards');
+    res.json(result.results || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST nueva tarjeta (genera audio)
@@ -170,14 +173,11 @@ app.post('/api/cards', async (req, res) => {
       if (!elevenRes.ok) {
         const apiError = await elevenRes.text();
         console.error('[ElevenLabs ERROR]', {
-          status: elevenRes.status,
-          statusText: elevenRes.statusText,
-          response: apiError,
-          text: en,
+          apiError,
         });
-        throw new Error('Error generando audio ElevenLabs');
+        return res.status(500).json({ error: 'Error generando audio' });
       }
-      const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
+      const audioBuffer = await elevenRes.arrayBuffer();
       // Sube a Cloudflare R2
       const filename = `card_${Date.now()}.mp3`;
       try {
@@ -199,16 +199,29 @@ app.post('/api/cards', async (req, res) => {
   }
   // Inicializa level=0 y nextReview=ahora
   const now = new Date().toISOString();
-  const info = db.prepare('INSERT INTO cards (en, es, audio_url, level, nextReview) VALUES (?, ?, ?, ?, ?)').run(en, es, audio_url, 0, now);
-  const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json(card);
+  try {
+    const insertRes = await queryD1(
+      'INSERT INTO cards (en, es, audio_url, level, nextReview) VALUES (?, ?, ?, ?, ?)',
+      [en, es, audio_url, 0, now]
+    );
+    // D1 no retorna lastInsertRowid, así que buscamos la última tarjeta insertada por en, es, audio_url, nextReview
+    const selectRes = await queryD1(
+      'SELECT * FROM cards WHERE en = ? AND es = ? AND audio_url IS ? AND nextReview = ? ORDER BY id DESC LIMIT 1',
+      [en, es, audio_url, now]
+    );
+    const card = selectRes.results?.[0] || null;
+    res.status(201).json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT actualizar tarjeta
 app.put('/api/cards/:id', async (req, res) => {
   const { en, es, level, nextReview } = req.body;
   const id = req.params.id;
-  const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
+  const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+  const card = selectRes.results?.[0] || null;
   if (!card) return res.status(404).send('Not found');
 
   let audio_url = card.audio_url;
@@ -246,56 +259,71 @@ app.put('/api/cards/:id', async (req, res) => {
     audio_url = null;
   }
 
-  db.prepare(`UPDATE cards SET 
+  await queryD1(`UPDATE cards SET 
     en = COALESCE(?, en),
     es = COALESCE(?, es),
     level = COALESCE(?, level),
     nextReview = COALESCE(?, nextReview),
     audio_url = ?
     WHERE id = ?
-  `).run(en, es, level, nextReview, audio_url, id);
-  const updated = db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
+  `, [en, es, level, nextReview, audio_url, id]);
+  const updatedRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+  const updated = updatedRes.results?.[0] || null;
   res.json(updated);
 });
 
 // DELETE tarjeta
-app.delete('/api/cards/:id', (req, res) => {
-  db.prepare('DELETE FROM cards WHERE id = ?').run(req.params.id);
-  res.status(204).send();
+app.delete('/api/cards/:id', async (req, res) => {
+  try {
+    await queryD1('DELETE FROM cards WHERE id = ?', [req.params.id]);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET cards próximas a repasar
-app.get('/api/cards/next', (req, res) => {
+app.get('/api/cards/next', async (req, res) => {
   const now = new Date().toISOString();
-  const cards = db.prepare('SELECT * FROM cards WHERE nextReview IS NOT NULL AND nextReview <= ? ORDER BY nextReview ASC').all(now);
-  res.json(cards);
+  try {
+    const result = await queryD1('SELECT * FROM cards WHERE nextReview IS NOT NULL AND nextReview <= ? ORDER BY nextReview ASC', [now]);
+    res.json(result.results || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST marcar card como repasada y actualizar nextReview y level
-app.post('/api/cards/:id/review', (req, res) => {
+app.post('/api/cards/:id/review', async (req, res) => {
   const id = req.params.id;
-  const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
-  if (!card) return res.status(404).send('Not found');
-  // Intervalos: 1min, 30min, 1h, 6h, 1d, 3d, 7d, 14d, 30d
-  const intervals = [
-    1 * 60 * 1000,         // 1 min
-    30 * 60 * 1000,        // 30 min
-    60 * 60 * 1000,        // 1 hora
-    6 * 60 * 60 * 1000,    // 6 horas
-    24 * 60 * 60 * 1000,   // 1 día
-    3 * 24 * 60 * 60 * 1000, // 3 días
-    7 * 24 * 60 * 60 * 1000, // 7 días
-    14 * 24 * 60 * 60 * 1000, // 14 días
-    30 * 24 * 60 * 60 * 1000  // 30 días
-  ];
-  let nextLevel = (card.level || 0) + 1;
-  if (nextLevel > 8) nextLevel = 8; // máximo 30 días
-  const now = Date.now();
-  const interval = intervals[nextLevel - 1] || intervals[intervals.length - 1];
-  const nextReview = new Date(now + interval).toISOString();
-  db.prepare('UPDATE cards SET level = ?, nextReview = ? WHERE id = ?').run(nextLevel, nextReview, id);
-  const updated = db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
-  res.json(updated);
+  try {
+    const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+    const card = selectRes.results?.[0] || null;
+    if (!card) return res.status(404).send('Not found');
+    // Intervalos: 1min, 30min, 1h, 6h, 1d, 3d, 7d, 14d, 30d
+    const intervals = [
+      1 * 60 * 1000,         // 1 min
+      30 * 60 * 1000,        // 30 min
+      60 * 60 * 1000,        // 1 hora
+      6 * 60 * 60 * 1000,    // 6 horas
+      24 * 60 * 60 * 1000,   // 1 día
+      3 * 24 * 60 * 60 * 1000, // 3 días
+      7 * 24 * 60 * 60 * 1000, // 7 días
+      14 * 24 * 60 * 60 * 1000, // 14 días
+      30 * 24 * 60 * 60 * 1000  // 30 días
+    ];
+    let nextLevel = (card.level || 0) + 1;
+    if (nextLevel > 8) nextLevel = 8; // máximo 30 días
+    const now = Date.now();
+    const interval = intervals[nextLevel - 1] || intervals[intervals.length - 1];
+    const nextReview = new Date(now + interval).toISOString();
+    await queryD1('UPDATE cards SET level = ?, nextReview = ? WHERE id = ?', [nextLevel, nextReview, id]);
+    const updatedRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+    const updated = updatedRes.results?.[0] || null;
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Servir archivos estáticos de React en producción
@@ -310,10 +338,8 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-if (!isTestEnv) {
-  app.listen(process.env.PORT || PORT, () => {
-    console.log(`Server running on http://localhost:${process.env.PORT || PORT}`);
-  });
-}
+app.listen(process.env.PORT || PORT, () => {
+  console.log(`Server running on http://localhost:${process.env.PORT || PORT}`);
+});
 
 export default app;
