@@ -42,11 +42,13 @@ function Admin() {
   };
 
   useEffect(() => {
-    fetchCards();
-    fetchDueCards();
+    if (loggedIn) {
+      fetchCards();
+      fetchDueCards();
+    }
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loggedIn]);
 
   // ... resto igual ...
 
@@ -62,9 +64,7 @@ function Admin() {
       });
   };
 
-  useEffect(() => {
-    fetchCards();
-  }, []);
+
 
   const handleChange = e => {
     setForm({ ...form, [e.target.name]: e.target.value });
