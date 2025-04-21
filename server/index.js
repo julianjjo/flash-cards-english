@@ -13,7 +13,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
+const ELEVENLABS_VOICE_ID = 'iP95p4xoKVk53GoZ742B';
 const ELEVENLABS_MODEL_ID = 'eleven_multilingual_v2';
 
 // Cloudflare R2 config
