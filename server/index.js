@@ -119,7 +119,6 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
   const { en, es } = req.body;
   if (!en || !es) return res.status(400).send('Faltan campos');
   let audio_url = null;
-  const isTest = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
 
   try {
     let audioBuffer = null;
@@ -201,7 +200,6 @@ app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
   if (!card) return res.status(404).send('Not found');
 
   let audio_url = card.audio_url;
-  const isTest = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
   // Si el campo 'en' cambia, regenerar audio (solo si no es test)
   if (en && en !== card.en && !isTest) {
     try {
@@ -304,6 +302,75 @@ app.post('/api/cards/:id/review', async (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Recuperamos la tarjeta existente
+    const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+    const card = getFirstResult(selectRes);
+    if (!card) {
+      return res.status(404).send('Tarjeta no encontrada');
+    }
+
+    let audio_url = card.audio_url;
+
+    if (!isTest) {
+      // 3. Generamos el audio con ElevenLabs
+      const elevenRes = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': ELEVENLABS_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: card.en,
+            model_id: ELEVENLABS_MODEL_ID,
+          }),
+        }
+      );
+
+      if (!elevenRes.ok) {
+        const apiError = await elevenRes.text();
+        console.error('[ElevenLabs ERROR]', apiError);
+        return res.status(502).json({ error: 'Error generando audio' });
+      }
+
+      const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
+      const filename = `card_${Date.now()}.mp3`;
+
+      // 4. Subimos el MP3 a R2
+      await s3Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: filename,
+        Body: audioBuffer,
+        ContentType: 'audio/mpeg',
+      }));
+      audio_url = `${R2_PUBLIC_URL}/${filename}`;
+    } else {
+      // En test, dejamos audio_url en null para no hacer llamadas externas
+      audio_url = null;
+    }
+
+    // 5. Actualizamos la URL en la base de datos
+    await queryD1(
+      'UPDATE cards SET audio_url = ? WHERE id = ?',
+      [audio_url, id]
+    );
+
+    // 6. Devolvemos la tarjeta actualizada
+    const updatedRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+    const updatedCard = getFirstResult(updatedRes);
+    return res.json(updatedCard);
+
+  } catch (err) {
+    console.error('Error regenerando audio:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
