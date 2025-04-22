@@ -119,7 +119,6 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
   const { en, es } = req.body;
   if (!en || !es) return res.status(400).send('Faltan campos');
   let audio_url = null;
-  const isTest = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
 
   try {
     let audioBuffer = null;
@@ -201,7 +200,6 @@ app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
   if (!card) return res.status(404).send('Not found');
 
   let audio_url = card.audio_url;
-  const isTest = process.env.NODE_ENV === 'test' || (process.argv[1] && process.argv[1].includes('jest'));
   // Si el campo 'en' cambia, regenerar audio (solo si no es test)
   if (en && en !== card.en && !isTest) {
     try {
@@ -318,9 +316,6 @@ app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
       return res.status(404).send('Tarjeta no encontrada');
     }
 
-    // 2. Determinamos si estamos en modo test
-    const isTest = process.env.NODE_ENV === 'test' ||
-                   (process.argv[1] && process.argv[1].includes('jest'));
     let audio_url = card.audio_url;
 
     if (!isTest) {
