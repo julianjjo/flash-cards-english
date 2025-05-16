@@ -6,6 +6,7 @@ const API_URL = '\/api/cards';
 function Admin() {
   const [regenerating, setRegenerating] = useState({});
   const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem('admin_auth'));
+  const [showForm, setShowForm] = useState(false); // Para mostrar/ocultar el formulario
   // Si no está logueado, mostrar el login
   if (!loggedIn) return <AdminLogin onLogin={() => setLoggedIn(true)} />;
 
@@ -21,6 +22,7 @@ function Admin() {
   const [submitting, setSubmitting] = useState(false);
   const [dueCards, setDueCards] = useState([]);
   const [now, setNow] = useState(Date.now());
+  const [search, setSearch] = useState(""); // Estado para el buscador
 
   // Intervalos en ms para calcular la barra visual (deben coincidir con backend)
   const intervals = [
@@ -66,7 +68,11 @@ function Admin() {
       });
   };
 
-
+  // Filtrar tarjetas según búsqueda
+  const filteredCards = cards.filter(card =>
+    card.en.toLowerCase().includes(search.toLowerCase()) ||
+    card.es.toLowerCase().includes(search.toLowerCase())
+  );
 
   const handleChange = e => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -122,6 +128,7 @@ function Admin() {
     setError('');
     setExistingAudio(card.audio_url || null);
     setAudioFile(null);
+    setShowForm(true);
   };
 
   const handleDelete = id => {
@@ -138,11 +145,11 @@ function Admin() {
   };
 
   return (
-    <div className="max-w-xl mx-auto">
-      <h2 className="text-2xl font-semibold mb-4">Administrar Tarjetas</h2>
-      {/* Próximas a repasar */}
-      <div className="mb-6">
+    <div className="max-w-6xl mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* Columna 1: Próximas a repasar */}
+      <section className="bg-green-50 rounded-lg shadow p-5 border border-green-200 h-fit">
         <h3 className="font-semibold mb-2 text-lg text-green-700">Próximas a repasar</h3>
+        <p className="text-sm text-gray-500 mb-2">Estas tarjetas están listas o casi listas para ser repasadas.</p>
         {dueCards.length === 0 ? (
           <div className="text-gray-400">No hay tarjetas por repasar ahora.</div>
         ) : (
@@ -201,141 +208,173 @@ function Admin() {
             })}
           </ul>
         )}
-      </div>
-      <form onSubmit={handleSubmit} className="bg-white shadow rounded p-6 flex flex-col gap-4 mb-8">
-        <div className="flex gap-2">
+      </section>
+
+      {/* Columna 2: Listado de tarjetas */}
+      <section className="bg-gray-50 shadow rounded-lg p-6 border border-gray-200 col-span-1 md:col-span-2 flex flex-col">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+          <h3 className="font-semibold text-lg text-blue-800 mb-0">Tarjetas existentes</h3>
+          {/* Buscador de tarjetas */}
           <input
             type="text"
-            name="en"
-            placeholder="Palabra en inglés"
-            className="border rounded px-3 py-2 w-1/2"
-            value={form.en}
-            onChange={handleChange}
-            autoFocus
-          />
-          <input
-            type="text"
-            name="es"
-            placeholder="Traducción en español"
-            className="border rounded px-3 py-2 w-1/2"
-            value={form.es}
-            onChange={handleChange}
+            placeholder="Buscar por palabra o traducción..."
+            className="border rounded px-3 py-2 w-full sm:w-72"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="font-medium">Audio (opcional):</label>
-          <input type="file" accept="audio/*" onChange={handleAudioChange} />
-          {audioFile && <span className="text-xs text-gray-600">Archivo: {audioFile.name}</span>}
-          {existingAudio && !audioFile && (
-            <span className="text-xs text-green-700">Ya existe audio. Si seleccionas uno nuevo, lo reemplazas.</span>
-          )}
-        </div>
-        {error && <div className="text-red-500 text-sm">{error}</div>}
-        <div className="flex gap-2 mt-2">
-          <button type="submit" className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700" disabled={submitting}>
-            {submitting ? 'Guardando...' : editId ? 'Actualizar' : 'Agregar'}
-          </button>
-          {editId && (
-            <button type="button" onClick={handleCancel} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 transition">
-              Cancelar
-            </button>
-          )}
-        </div>
-      </form>
-      <h3 className="font-semibold mb-2">Tarjetas existentes</h3>
-      {loading ? (
-        <div className="text-gray-500">Cargando...</div>
-      ) : cards.length === 0 ? (
-        <div className="text-gray-400">No hay tarjetas aún.</div>
-      ) : (
-        <>
-          <ul className="divide-y">
-            {cards.slice((page-1)*CARDS_PER_PAGE, page*CARDS_PER_PAGE).map(card => (
-              <li key={card.id} className="flex items-center justify-between py-2">
-                <span>
-                  <span className="font-bold text-blue-700">{card.en}</span> → <span className="text-gray-700">{card.es}</span>
-                </span>
-                <span className="flex gap-2">
-                  <button
-                    className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
-                    onClick={async () => {
-                      setRegenerating(r => ({ ...r, [card.id]: true }));
-                      try {
-                        const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
-                          method: 'POST',
-                          headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
-                        });
-                        if (!res.ok) throw new Error('Error regenerando audio');
-                        const data = await res.json();
-                        setCards(cards => cards.map(c => c.id === card.id ? { ...c, audio_url: data.audio_url } : c));
-                      } catch (e) {
-                        alert('Error regenerando audio');
-                      } finally {
-                        setRegenerating(r => ({ ...r, [card.id]: false }));
-                      }
-                    }}
-                  > {regenerating[card.id] ? (
+        <button
+          className="mb-4 self-end bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700"
+          onClick={() => setShowForm(true)}
+        >
+          Agregar nueva tarjeta
+        </button>
+        {loading ? (
+          <div className="text-gray-500">Cargando...</div>
+        ) : filteredCards.length === 0 ? (
+          <div className="text-gray-400">No hay tarjetas que coincidan con la búsqueda.</div>
+        ) : (
+          <>
+            <ul className="divide-y">
+              {filteredCards.slice((page-1)*CARDS_PER_PAGE, page*CARDS_PER_PAGE).map(card => (
+                <li key={card.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-2 gap-2">
+                  <span>
+                    <span className="font-bold text-blue-700">{card.en}</span> → <span className="text-gray-700">{card.es}</span>
+                  </span>
+                  <span className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                    <button
+                      className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
+                      onClick={async () => {
+                        setRegenerating(r => ({ ...r, [card.id]: true }));
+                        try {
+                          const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
+                            method: 'POST',
+                            headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                          });
+                          if (!res.ok) throw new Error('Error regenerando audio');
+                          const data = await res.json();
+                          setCards(cards => cards.map(c => c.id === card.id ? { ...c, audio_url: data.audio_url } : c));
+                        } catch (e) {
+                          alert('Error regenerando audio');
+                        } finally {
+                          setRegenerating(r => ({ ...r, [card.id]: false }));
+                        }
+                      }}
+                    > {regenerating[card.id] ? (
   <svg className="animate-spin h-4 w-4 inline-block mr-1 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
 ) : null}Regenerar audio</button>
-                  <button
-                    className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
-                    onClick={() => handleEdit(card)}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                    onClick={() => handleDelete(card.id)}
-                  >
-                    Eliminar
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-green-200 text-green-800 rounded hover:bg-green-300 border border-green-400"
-                    onClick={async () => {
-                      const now = new Date().toISOString();
-                      await fetch(`${API_URL}/${card.id}`, {
-                        method: 'PUT',
-                        headers: {
-                          Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          en: card.en,
-                          es: card.es,
-                          level: card.level,
-                          audio_url: card.audio_url,
-                          nextReview: now
-                        })
-                      });
-                      fetchDueCards();
-                      fetchCards();
-                    }}
-                  >
-                    Forzar repaso
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          {/* Paginador */}
-          <div className="flex justify-center items-center gap-2 mt-4">
+                    <button
+                      className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
+                      onClick={() => handleEdit(card)}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                      onClick={() => handleDelete(card.id)}
+                    >
+                      Eliminar
+                    </button>
+                    <button
+                      className="px-3 py-1 text-xs bg-green-200 text-green-800 rounded hover:bg-green-300 border border-green-400"
+                      onClick={async () => {
+                        const now = new Date().toISOString();
+                        await fetch(`${API_URL}/${card.id}`, {
+                          method: 'PUT',
+                          headers: {
+                            Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            en: card.en,
+                            es: card.es,
+                            level: card.level,
+                            audio_url: card.audio_url,
+                            nextReview: now
+                          })
+                        });
+                        fetchDueCards();
+                        fetchCards();
+                      }}
+                    >
+                      Forzar repaso
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {/* Paginador */}
+            <div className="flex justify-center items-center gap-2 mt-4">
+              <button
+                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Anterior
+              </button>
+              <span>Página {page} de {Math.ceil(filteredCards.length / CARDS_PER_PAGE)}</span>
+              <button
+                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                onClick={() => setPage(p => Math.min(Math.ceil(filteredCards.length / CARDS_PER_PAGE), p + 1))}
+                disabled={page === Math.ceil(filteredCards.length / CARDS_PER_PAGE) || filteredCards.length === 0}
+              >
+                Siguiente
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Popup de formulario de creación/edición */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white shadow rounded-lg p-8 border border-gray-200 w-full max-w-md relative">
             <button
-              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              Anterior
-            </button>
-            <span>Página {page} de {Math.ceil(cards.length / CARDS_PER_PAGE)}</span>
-            <button
-              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-              onClick={() => setPage(p => Math.min(Math.ceil(cards.length / CARDS_PER_PAGE), p + 1))}
-              disabled={page === Math.ceil(cards.length / CARDS_PER_PAGE) || cards.length === 0}
-            >
-              Siguiente
-            </button>
+              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-2xl"
+              onClick={() => { setShowForm(false); handleCancel(); }}
+              aria-label="Cerrar"
+            >×</button>
+            <h3 className="font-semibold mb-3 text-blue-700 text-lg">{editId ? 'Editar tarjeta' : 'Agregar nueva tarjeta'}</h3>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  name="en"
+                  placeholder="Palabra en inglés"
+                  className="border rounded px-3 py-2 w-1/2"
+                  value={form.en}
+                  onChange={handleChange}
+                  autoFocus
+                />
+                <input
+                  type="text"
+                  name="es"
+                  placeholder="Traducción en español"
+                  className="border rounded px-3 py-2 w-1/2"
+                  value={form.es}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="font-medium">Audio (opcional):</label>
+                <input type="file" accept="audio/*" onChange={handleAudioChange} />
+                {audioFile && <span className="text-xs text-gray-600">Archivo: {audioFile.name}</span>}
+                {existingAudio && !audioFile && (
+                  <span className="text-xs text-green-700">Ya existe audio. Si seleccionas uno nuevo, lo reemplazas.</span>
+                )}
+              </div>
+              {error && <div className="text-red-500 text-sm">{error}</div>}
+              <div className="flex gap-2 mt-2">
+                <button type="submit" className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700" disabled={submitting}>
+                  {submitting ? 'Guardando...' : editId ? 'Actualizar' : 'Agregar'}
+                </button>
+                <button type="button" onClick={() => { setShowForm(false); handleCancel(); }} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 transition">
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
