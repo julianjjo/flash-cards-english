@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import TipsDisplay from '../components/TipsDisplay.jsx';
 
 const API_URL = '\/api/cards';
 
@@ -86,10 +87,12 @@ function Home() {
             </span>
           </div>
           {/* Back */}
-          <div className="absolute w-full h-full bg-blue-100 rounded-lg shadow-lg flex items-center justify-center cursor-pointer rotate-y-180 backface-hidden px-6 py-4 overflow-auto">
-            <span className="block text-xl sm:text-2xl font-bold text-center break-words whitespace-pre-line leading-snug">
+          <div className="absolute w-full h-full bg-blue-100 rounded-lg shadow-lg flex flex-col items-center justify-center cursor-pointer rotate-y-180 backface-hidden px-6 py-4 overflow-auto">
+            <span className="block text-xl sm:text-2xl font-bold text-center break-words whitespace-pre-line leading-snug mb-2">
               {card.es}
             </span>
+            {/* Tips de Gemini */}
+            {card.tips && <TipsDisplay tips={card.tips} />}
           </div>
         </div>
       </div>

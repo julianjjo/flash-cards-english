@@ -12,8 +12,10 @@ beforeAll(() => {
     es TEXT NOT NULL,
     level INTEGER DEFAULT 0,
     nextReview TEXT,
-    audio_url TEXT
+    audio_url TEXT,
+    tips TEXT
   );`).run();
+  process.env.GEMINI_API_KEY = 'AIzaSyB3bV2rpz4IUnHcV0_s8OUqa86SBOCxkk0';
 });
 
 afterAll(() => {

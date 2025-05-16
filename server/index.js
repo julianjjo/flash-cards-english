@@ -8,6 +8,7 @@ import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } fr
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
 import multer from 'multer';
+import { GoogleGenAI } from '@google/genai';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -15,6 +16,7 @@ dotenv.config();
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 const ELEVENLABS_MODEL_ID = 'eleven_multilingual_v2';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Cloudflare R2 config
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -95,7 +97,8 @@ if (isTest) {
       es TEXT NOT NULL,
       level INTEGER DEFAULT 0,
       nextReview TEXT,
-      audio_url TEXT
+      audio_url TEXT,
+      tips TEXT
     );`);
   } catch (e) {
     console.error('Error creando tabla en D1:', e);
@@ -114,11 +117,42 @@ app.get('/api/cards', async (req, res) => {
   }
 });
 
+// Utilidad para extraer el primer resultado de queryD1, compatible con test y producción
+function getFirstResult(res) {
+  if (res.results) return res.results[0] || null; // test/local
+  if (res.result && Array.isArray(res.result)) return res.result[0]?.results?.[0] || null; // prod/D1
+  return null;
+}
+
+async function generateTipsWithGemini(en, es) {
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const config = { responseMimeType: 'text/plain' };
+  const model = 'gemini-2.5-flash-preview-04-17';
+  const prompt = `Dame tips, sinónimos, ejemplos y una curiosidad para aprender la palabra inglesa "${en}" (traducción: "${es}").\nDevuelve la respuesta en formato markdown, usando un bloque de código JSON así:\n\n\u0060\u0060\u0060json\n{\n  \"tips\": [\n    \"Ejemplo de tip 1\",\n    \"Ejemplo de tip 2\"\n  ],\n  \"sinonimos\": [\n    \"Sinónimo 1\",\n    \"Sinónimo 2\"\n  ],\n  \"ejemplos\": [\n    \"Frase de ejemplo en inglés (traducción corta al español).\"\n  ],\n  \"curiosidad\": \"Una curiosidad breve sobre la palabra.\"\n}\n\u0060\u0060\u0060\n\n- "tips": máximo 2 consejos prácticos, frases cortas.\n- "sinonimos": máximo 2 sinónimos o expresiones equivalentes en español.\n- "ejemplos": máximo 1 frase de ejemplo en inglés, con traducción corta al español.\n- "curiosidad": una sola curiosidad breve.\nNo uses explicaciones largas ni listas extensas.`;
+  const contents = [
+    {
+      role: 'user',
+      parts: [ { text: prompt } ],
+    },
+  ];
+  let tips = '';
+  try {
+    const response = await ai.models.generateContentStream({ model, config, contents });
+    for await (const chunk of response) {
+      if (chunk.text) tips += chunk.text;
+    }
+  } catch (e) {
+    throw new Error('Gemini SDK error: ' + e.message);
+  }
+  return tips;
+}
+
 // POST nueva tarjeta (genera audio)
 app.post('/api/cards', upload.single('audio'), async (req, res) => {
   const { en, es } = req.body;
   if (!en || !es) return res.status(400).send('Faltan campos');
   let audio_url = null;
+  let tips = null;
 
   try {
     let audioBuffer = null;
@@ -165,11 +199,31 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
     }
     // Si es test, deja audio_url = null
 
+    // Generar tips con Gemini
+    if (!isTest) {
+      try {
+        tips = await generateTipsWithGemini(en, es);
+        // Limpiar formato Markdown si Gemini responde con ```json ... ```
+        if (typeof tips === 'string' && tips.trim().startsWith('```json')) {
+          tips = tips.trim().replace(/^```json[\r\n]+/, '').replace(/```\s*$/, '').trim();
+        }
+        // Validar que sea JSON válido antes de guardar
+        try {
+          JSON.parse(tips);
+        } catch {
+          tips = null;
+        }
+      } catch (e) {
+        console.error('Error generando tips con Gemini:', e);
+        tips = null;
+      }
+    }
+
     // Inicializa level=0 y nextReview=ahora
     const now = new Date().toISOString();
     const insertRes = await queryD1(
-      'INSERT INTO cards (en, es, audio_url, level, nextReview) VALUES (?, ?, ?, ?, ?)',
-      [en, es, audio_url, 0, now]
+      'INSERT INTO cards (en, es, audio_url, level, nextReview, tips) VALUES (?, ?, ?, ?, ?, ?)',
+      [en, es, audio_url, 0, now, tips]
     );
     // D1 no retorna lastInsertRowid, así que buscamos la última tarjeta insertada por en, es, audio_url, nextReview
     const selectRes = await queryD1(
@@ -183,13 +237,6 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// Utilidad para extraer el primer resultado de queryD1, compatible con test y producción
-function getFirstResult(res) {
-  if (res.results) return res.results[0] || null; // test/local
-  if (res.result && Array.isArray(res.result)) return res.result[0]?.results?.[0] || null; // prod/D1
-  return null;
-}
 
 // PUT actualizar tarjeta
 app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
@@ -371,6 +418,37 @@ app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
   } catch (err) {
     console.error('Error regenerando audio:', err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint para regenerar tips de una card existente
+app.post('/api/cards/:id/regenerate-tips', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
+    const card = getFirstResult(selectRes);
+    if (!card) return res.status(404).send('Not found');
+    let tips = null;
+    try {
+      tips = await generateTipsWithGemini(card.en, card.es);
+      // Limpiar formato Markdown si Gemini responde con ```json ... ```
+      if (typeof tips === 'string' && tips.trim().startsWith('```json')) {
+        tips = tips.trim().replace(/^```json[\r\n]+/, '').replace(/```\s*$/, '').trim();
+      }
+      // Validar que sea JSON válido antes de guardar
+      try {
+        JSON.parse(tips);
+      } catch {
+        tips = null;
+      }
+    } catch (e) {
+      console.error('Error generando tips con Gemini:', e);
+      tips = null;
+    }
+    await queryD1('UPDATE cards SET tips = ? WHERE id = ?', [tips, id]);
+    res.json({ tips });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
