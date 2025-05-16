@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import AdminLogin from './AdminLogin';
+import TipsDisplay from '../components/TipsDisplay.jsx';
 
 const API_URL = '\/api/cards';
 
@@ -7,6 +8,7 @@ function Admin() {
   const [regenerating, setRegenerating] = useState({});
   const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem('admin_auth'));
   const [showForm, setShowForm] = useState(false); // Para mostrar/ocultar el formulario
+  const [generatingTips, setGeneratingTips] = useState({}); // Estado para loading de tips
   // Si no está logueado, mostrar el login
   if (!loggedIn) return <AdminLogin onLogin={() => setLoggedIn(true)} />;
 
@@ -238,9 +240,13 @@ function Admin() {
             <ul className="divide-y">
               {filteredCards.slice((page-1)*CARDS_PER_PAGE, page*CARDS_PER_PAGE).map(card => (
                 <li key={card.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-2 gap-2">
-                  <span>
+                  <div className="flex-1">
                     <span className="font-bold text-blue-700">{card.en}</span> → <span className="text-gray-700">{card.es}</span>
-                  </span>
+                    {/* Mostrar tips si existen */}
+                    {card.tips && (
+                      <TipsDisplay tips={card.tips} maxChars={120} />
+                    )}
+                  </div>
                   <span className="flex flex-wrap gap-2 mt-2 sm:mt-0">
                     <button
                       className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
@@ -263,6 +269,30 @@ function Admin() {
                     > {regenerating[card.id] ? (
   <svg className="animate-spin h-4 w-4 inline-block mr-1 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
 ) : null}Regenerar audio</button>
+                    <button
+                      className="px-3 py-1 text-xs bg-purple-200 text-purple-900 rounded hover:bg-purple-300 border border-purple-400"
+                      onClick={async () => {
+                        setGeneratingTips(r => ({ ...r, [card.id]: true }));
+                        try {
+                          const res = await fetch(`${API_URL}/${card.id}/regenerate-tips`, {
+                            method: 'POST',
+                            headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                          });
+                          if (!res.ok) throw new Error('Error generando tips');
+                          const data = await res.json();
+                          setCards(cards => cards.map(c => c.id === card.id ? { ...c, tips: data.tips } : c));
+                        } catch (e) {
+                          alert('Error generando tips');
+                        } finally {
+                          setGeneratingTips(r => ({ ...r, [card.id]: false }));
+                        }
+                      }}
+                    >
+                      {generatingTips[card.id] ? (
+                        <svg className="animate-spin h-4 w-4 inline-block mr-1 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                      ) : null}
+                      Generar tips
+                    </button>
                     <button
                       className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
                       onClick={() => handleEdit(card)}
