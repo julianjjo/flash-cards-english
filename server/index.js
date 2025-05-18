@@ -98,8 +98,14 @@ if (isTest) {
       level INTEGER DEFAULT 0,
       nextReview TEXT,
       audio_url TEXT,
-      tips TEXT
+      tips TEXT,
+      easeFactor REAL DEFAULT 2.5,
+      repetitions INTEGER DEFAULT 0,
+      lastInterval INTEGER DEFAULT 0
     );`);
+    await queryD1('ALTER TABLE cards ADD COLUMN easeFactor REAL DEFAULT 2.5;').catch(()=>{});
+    await queryD1('ALTER TABLE cards ADD COLUMN repetitions INTEGER DEFAULT 0;').catch(()=>{});
+    await queryD1('ALTER TABLE cards ADD COLUMN lastInterval INTEGER DEFAULT 0;').catch(()=>{});
   } catch (e) {
     console.error('Error creando tabla en D1:', e);
   }
@@ -319,31 +325,44 @@ app.get('/api/cards/next', async (req, res) => {
   }
 });
 
-// POST marcar card como repasada y actualizar nextReview y level
+// POST marcar card como repasada y actualizar nextReview y level (SM-2)
 app.post('/api/cards/:id/review', async (req, res) => {
   const id = req.params.id;
+  // Permitir grade (0-5) por body o query, default 5
+  let grade = 5;
+  if (req.body && typeof req.body.grade !== 'undefined') grade = Number(req.body.grade);
+  else if (req.query && typeof req.query.grade !== 'undefined') grade = Number(req.query.grade);
+  if (isNaN(grade) || grade < 0 || grade > 5) grade = 5;
   try {
     const selectRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
     const card = selectRes.results?.[0] || null;
     if (!card) return res.status(404).send('Not found');
-    // Intervalos: 1min, 30min, 1h, 6h, 1d, 3d, 7d, 14d, 30d
-    const intervals = [
-      1 * 60 * 1000,         // 1 min
-      30 * 60 * 1000,        // 30 min
-      60 * 60 * 1000,        // 1 hora
-      6 * 60 * 60 * 1000,    // 6 horas
-      24 * 60 * 60 * 1000,   // 1 día
-      3 * 24 * 60 * 60 * 1000, // 3 días
-      7 * 24 * 60 * 60 * 1000, // 7 días
-      14 * 24 * 60 * 60 * 1000, // 14 días
-      30 * 24 * 60 * 60 * 1000  // 30 días
-    ];
-    let nextLevel = (card.level || 0) + 1;
-    if (nextLevel > 8) nextLevel = 8; // máximo 30 días
-    const now = Date.now();
-    const interval = intervals[nextLevel - 1] || intervals[intervals.length - 1];
-    const nextReview = new Date(now + interval).toISOString();
-    await queryD1('UPDATE cards SET level = ?, nextReview = ? WHERE id = ?', [nextLevel, nextReview, id]);
+    // SM-2 variables
+    let easeFactor = card.easeFactor || 2.5;
+    let repetitions = card.repetitions || 0;
+    let lastInterval = card.lastInterval || 0;
+    let nextReview;
+    if (grade < 3) {
+      repetitions = 0;
+      lastInterval = 1;
+      nextReview = new Date(Date.now() + 24*60*60*1000).toISOString(); // 1 día
+    } else {
+      repetitions += 1;
+      if (repetitions === 1) {
+        lastInterval = 1;
+      } else if (repetitions === 2) {
+        lastInterval = 6;
+      } else {
+        lastInterval = Math.round(lastInterval * easeFactor);
+      }
+      nextReview = new Date(Date.now() + lastInterval * 24*60*60*1000).toISOString();
+      // Actualizar easeFactor
+      easeFactor = easeFactor + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
+      if (easeFactor < 1.3) easeFactor = 1.3;
+    }
+    // Opcional: actualizar level para compatibilidad visual
+    let level = repetitions;
+    await queryD1('UPDATE cards SET easeFactor = ?, repetitions = ?, lastInterval = ?, nextReview = ?, level = ? WHERE id = ?', [easeFactor, repetitions, lastInterval, nextReview, level, id]);
     const updatedRes = await queryD1('SELECT * FROM cards WHERE id = ?', [id]);
     const updated = updatedRes.results?.[0] || null;
     res.json(updated);
