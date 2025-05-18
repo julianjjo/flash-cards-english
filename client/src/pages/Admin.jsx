@@ -238,100 +238,134 @@ function Admin() {
         ) : (
           <>
             <ul className="divide-y">
-              {filteredCards.slice((page-1)*CARDS_PER_PAGE, page*CARDS_PER_PAGE).map(card => (
-                <li key={card.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-2 gap-2">
-                  <div className="flex-1">
-                    <span className="font-bold text-blue-700">{card.en}</span> → <span className="text-gray-700">{card.es}</span>
-                    {/* Mostrar tips si existen */}
-                    {card.tips && (
-                      <TipsDisplay tips={card.tips} maxChars={120} />
-                    )}
-                  </div>
-                  <span className="flex flex-wrap gap-2 mt-2 sm:mt-0">
-                    <button
-                      className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
-                      onClick={async () => {
-                        setRegenerating(r => ({ ...r, [card.id]: true }));
-                        try {
-                          const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
-                            method: 'POST',
-                            headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+              {filteredCards.slice((page-1)*CARDS_PER_PAGE, page*CARDS_PER_PAGE).map(card => {
+                // Calcular tiempo restante para próxima revisión
+                let countdown = '';
+                if (card.nextReview) {
+                  const ms = new Date(card.nextReview) - Date.now();
+                  if (ms > 0) {
+                    const d = Math.floor(ms / 86400000);
+                    const h = Math.floor((ms % 86400000) / 3600000);
+                    const m = Math.floor((ms % 3600000) / 60000);
+                    const s = Math.floor((ms % 60000) / 1000);
+                    countdown =
+                      (d ? d + 'd ' : '') +
+                      (h ? h + 'h ' : '') +
+                      (m ? m + 'm ' : '') +
+                      (d === 0 && h === 0 && m < 10 ? s + 's' : '');
+                  } else {
+                    countdown = '¡Listo para repasar!';
+                  }
+                }
+                return (
+                  <li key={card.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-2 gap-2">
+                    <div className="flex-1 relative">
+                      <span className="font-bold text-blue-700">{card.en}</span> → <span className="text-gray-700">{card.es}</span>
+                      {/* Icono info SM-2 */}
+                      <span className="ml-2 cursor-pointer group align-middle inline-block">
+                        <span className="text-blue-400 hover:text-blue-700 text-base" tabIndex="0">ℹ️</span>
+                        <div className="absolute z-20 left-0 mt-1 w-64 bg-white border border-blue-200 rounded shadow-lg p-3 text-xs text-gray-700 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200" style={{minWidth:'200px'}}>
+                          <div><b>Ease Factor:</b> {card.easeFactor?.toFixed(2) ?? '—'}</div>
+                          <div><b>Repeticiones:</b> {card.repetitions ?? '—'}</div>
+                          <div><b>Último intervalo:</b> {card.lastInterval ?? '—'} días</div>
+                          <div><b>Próximo repaso:</b> {card.nextReview ? new Date(card.nextReview).toLocaleString() : '—'}</div>
+                        </div>
+                      </span>
+                      {/* Cuenta regresiva discreta */}
+                      {countdown && (
+                        <span className="ml-2 text-xs text-gray-500 align-middle select-none" title="Tiempo hasta el próximo repaso">⏳ {countdown}</span>
+                      )}
+                      {/* Mostrar tips si existen */}
+                      {card.tips && (
+                        <TipsDisplay tips={card.tips} maxChars={120} />
+                      )}
+                    </div>
+                    <span className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                      <button
+                        className="px-3 py-1 text-xs bg-blue-200 text-blue-900 rounded hover:bg-blue-300 border border-blue-400"
+                        onClick={async () => {
+                          setRegenerating(r => ({ ...r, [card.id]: true }));
+                          try {
+                            const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
+                              method: 'POST',
+                              headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                            });
+                            if (!res.ok) throw new Error('Error regenerando audio');
+                            const data = await res.json();
+                            setCards(cards => cards.map(c => c.id === card.id ? { ...c, audio_url: data.audio_url } : c));
+                          } catch (e) {
+                            alert('Error regenerando audio');
+                          } finally {
+                            setRegenerating(r => ({ ...r, [card.id]: false }));
+                          }
+                        }}
+                      > {regenerating[card.id] ? (
+    <svg className="animate-spin h-4 w-4 inline-block mr-1 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+  ) : null}Regenerar audio</button>
+                      <button
+                        className="px-3 py-1 text-xs bg-purple-200 text-purple-900 rounded hover:bg-purple-300 border border-purple-400"
+                        onClick={async () => {
+                          setGeneratingTips(r => ({ ...r, [card.id]: true }));
+                          try {
+                            const res = await fetch(`${API_URL}/${card.id}/regenerate-tips`, {
+                              method: 'POST',
+                              headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                            });
+                            if (!res.ok) throw new Error('Error generando tips');
+                            const data = await res.json();
+                            setCards(cards => cards.map(c => c.id === card.id ? { ...c, tips: data.tips } : c));
+                          } catch (e) {
+                            alert('Error generando tips');
+                          } finally {
+                            setGeneratingTips(r => ({ ...r, [card.id]: false }));
+                          }
+                        }}
+                      >
+                        {generatingTips[card.id] ? (
+                          <svg className="animate-spin h-4 w-4 inline-block mr-1 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                        ) : null}
+                        Generar tips
+                      </button>
+                      <button
+                        className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
+                        onClick={() => handleEdit(card)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                        onClick={() => handleDelete(card.id)}
+                      >
+                        Eliminar
+                      </button>
+                      <button
+                        className="px-3 py-1 text-xs bg-green-200 text-green-800 rounded hover:bg-green-300 border border-green-400"
+                        onClick={async () => {
+                          const now = new Date().toISOString();
+                          await fetch(`${API_URL}/${card.id}`, {
+                            method: 'PUT',
+                            headers: {
+                              Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              en: card.en,
+                              es: card.es,
+                              level: card.level,
+                              audio_url: card.audio_url,
+                              nextReview: now
+                            })
                           });
-                          if (!res.ok) throw new Error('Error regenerando audio');
-                          const data = await res.json();
-                          setCards(cards => cards.map(c => c.id === card.id ? { ...c, audio_url: data.audio_url } : c));
-                        } catch (e) {
-                          alert('Error regenerando audio');
-                        } finally {
-                          setRegenerating(r => ({ ...r, [card.id]: false }));
-                        }
-                      }}
-                    > {regenerating[card.id] ? (
-  <svg className="animate-spin h-4 w-4 inline-block mr-1 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
-) : null}Regenerar audio</button>
-                    <button
-                      className="px-3 py-1 text-xs bg-purple-200 text-purple-900 rounded hover:bg-purple-300 border border-purple-400"
-                      onClick={async () => {
-                        setGeneratingTips(r => ({ ...r, [card.id]: true }));
-                        try {
-                          const res = await fetch(`${API_URL}/${card.id}/regenerate-tips`, {
-                            method: 'POST',
-                            headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
-                          });
-                          if (!res.ok) throw new Error('Error generando tips');
-                          const data = await res.json();
-                          setCards(cards => cards.map(c => c.id === card.id ? { ...c, tips: data.tips } : c));
-                        } catch (e) {
-                          alert('Error generando tips');
-                        } finally {
-                          setGeneratingTips(r => ({ ...r, [card.id]: false }));
-                        }
-                      }}
-                    >
-                      {generatingTips[card.id] ? (
-                        <svg className="animate-spin h-4 w-4 inline-block mr-1 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
-                      ) : null}
-                      Generar tips
-                    </button>
-                    <button
-                      className="px-3 py-1 text-xs bg-yellow-400 rounded hover:bg-yellow-500"
-                      onClick={() => handleEdit(card)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                      onClick={() => handleDelete(card.id)}
-                    >
-                      Eliminar
-                    </button>
-                    <button
-                      className="px-3 py-1 text-xs bg-green-200 text-green-800 rounded hover:bg-green-300 border border-green-400"
-                      onClick={async () => {
-                        const now = new Date().toISOString();
-                        await fetch(`${API_URL}/${card.id}`, {
-                          method: 'PUT',
-                          headers: {
-                            Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
-                            'Content-Type': 'application/json',
-                          },
-                          body: JSON.stringify({
-                            en: card.en,
-                            es: card.es,
-                            level: card.level,
-                            audio_url: card.audio_url,
-                            nextReview: now
-                          })
-                        });
-                        fetchDueCards();
-                        fetchCards();
-                      }}
-                    >
-                      Forzar repaso
-                    </button>
-                  </span>
-                </li>
-              ))}
+                          fetchDueCards();
+                          fetchCards();
+                        }}
+                      >
+                        Forzar repaso
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             {/* Paginador */}
             <div className="flex justify-center items-center gap-2 mt-4">

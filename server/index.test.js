@@ -13,7 +13,10 @@ beforeAll(() => {
     level INTEGER DEFAULT 0,
     nextReview TEXT,
     audio_url TEXT,
-    tips TEXT
+    tips TEXT,
+    easeFactor REAL DEFAULT 2.5,
+    repetitions INTEGER DEFAULT 0,
+    lastInterval INTEGER DEFAULT 0
   );`).run();
   process.env.GEMINI_API_KEY = 'AIzaSyB3bV2rpz4IUnHcV0_s8OUqa86SBOCxkk0';
 });
@@ -59,7 +62,7 @@ describe('Cards API', () => {
       .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
       .send();
     expect(res.statusCode).toBe(200);
-    expect(res.body.level).toBe(2); // porque ya lo subimos a 1 antes
+    expect(res.body.level).toBe(1); // SM-2: primer repaso exitoso -> level=1
     expect(new Date(res.body.nextReview)).toBeInstanceOf(Date);
   });
 });
