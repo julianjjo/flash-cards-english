@@ -29,28 +29,39 @@ This is a full-stack flashcard application with spaced repetition learning:
 - React 19 with React Router for navigation
 - Vite for bundling and development
 - TailwindCSS for styling
-- Two main pages: Home (flashcard review) and Admin (card management)
-- Uses basic auth for admin access
+- Authentication-protected pages: Login, Register, Home (flashcard review), Admin Dashboard
+- JWT-based authentication with Context API state management
+- Per-user flashcard collections with data isolation
 
 **Backend (`/server`):**
 - Express.js server on port 4000
-- SQLite database (better-sqlite3) with flashcards table
-- RESTful API for CRUD operations on flashcards
+- SQLite database (better-sqlite3) with users and flashcards tables
+- RESTful API for CRUD operations on flashcards with user isolation
+- JWT authentication with bcrypt password hashing
+- Role-based access control (user/admin roles)
 - Integration with Google Gemini TTS for text-to-speech (replacing ElevenLabs)
 - Google Gemini AI for generating study tips
 - AWS S3/Cloudflare R2 for file storage
-- Basic authentication for admin routes
+- Admin dashboard for user management
 
 **Key Files:**
 - `server/index.js` - Main Express server with all API endpoints
+- `server/services/auth-service.js` - JWT authentication and user management
+- `server/services/user-service.js` - User CRUD operations
 - `server/services/gemini-tts.js` - Gemini TTS service implementation
-- `client/src/App.jsx` - Main React app with routing
-- `client/src/pages/Home.jsx` - Flashcard review interface
-- `client/src/pages/Admin.jsx` - Admin panel for card management
+- `server/middleware/auth.js` - Authentication middleware
+- `server/middleware/admin.js` - Admin role verification
+- `client/src/App.jsx` - Main React app with routing and authentication
+- `client/src/pages/Login.jsx` - User login page
+- `client/src/pages/Register.jsx` - User registration page
+- `client/src/pages/Home.jsx` - Flashcard review interface (authenticated)
+- `client/src/pages/AdminDashboard.jsx` - Admin user management interface
+- `client/src/services/authService.js` - Frontend authentication service
 - `server/flashcards.db` - SQLite database
 
 **Database Schema:**
-- Flashcards table with fields: id, english, spanish, difficulty, last_reviewed, review_count
+- Users table: id, email, password_hash, role, created_at, updated_at
+- Flashcards table: id, english, spanish, user_id (FK), difficulty, last_reviewed, review_count
 
 **External Services:**
 - Google Gemini TTS for audio generation (gemini-2.5-pro-preview-tts model)
@@ -64,6 +75,8 @@ This is a full-stack flashcard application with spaced repetition learning:
 ## Environment Variables
 
 Required for development:
+- `JWT_SECRET` - Secret key for JWT access tokens (64+ character random string)
+- `JWT_REFRESH_SECRET` - Secret key for JWT refresh tokens (64+ character random string)
 - `GEMINI_API_KEY` - For text-to-speech and AI-powered study tips
 - `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`, `R2_PUBLIC_URL` - Cloudflare R2 storage
 
