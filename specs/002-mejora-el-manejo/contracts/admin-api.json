@@ -1,0 +1,593 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Flash Cards Admin API",
+    "description": "Admin-only endpoints for user and flashcard management",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000/api",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/admin/users": {
+      "get": {
+        "summary": "List all users (admin only)",
+        "description": "Retrieve paginated list of all system users",
+        "tags": ["Admin - User Management"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (1-based)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Filter by user role",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["user", "admin"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{userId}": {
+      "get": {
+        "summary": "Get specific user details (admin only)",
+        "description": "Retrieve detailed information about a specific user",
+        "tags": ["Admin - User Management"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "User ID to retrieve",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user account (admin only)",
+        "description": "Delete user account and all associated flashcards",
+        "tags": ["Admin - User Management"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "User ID to delete",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{userId}/flashcards": {
+      "get": {
+        "summary": "Get user's flashcards (admin only)",
+        "description": "Retrieve all flashcards belonging to a specific user",
+        "tags": ["Admin - Flashcard Management"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "User ID whose flashcards to retrieve",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User's flashcards retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlashcardListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/stats": {
+      "get": {
+        "summary": "Get system statistics (admin only)",
+        "description": "Retrieve overall system usage statistics",
+        "tags": ["Admin - Statistics"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "System statistics retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "UserListResponse": {
+        "type": "object",
+        "required": ["users", "pagination"],
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUserSummary"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationInfo"
+          }
+        }
+      },
+      "AdminUserSummary": {
+        "type": "object",
+        "required": ["id", "email", "role", "createdAt", "flashcardCount"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1,
+            "description": "User's unique identifier"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com",
+            "description": "User's email address"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "admin"],
+            "example": "user",
+            "description": "User's role in the system"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-09-07T10:00:00Z",
+            "description": "Account creation timestamp"
+          },
+          "flashcardCount": {
+            "type": "integer",
+            "example": 25,
+            "description": "Number of flashcards owned by user"
+          }
+        }
+      },
+      "AdminUserDetails": {
+        "type": "object",
+        "required": ["id", "email", "role", "createdAt", "updatedAt", "flashcardCount", "lastLoginAt"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1,
+            "description": "User's unique identifier"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com",
+            "description": "User's email address"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "admin"],
+            "example": "user",
+            "description": "User's role in the system"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-09-07T10:00:00Z",
+            "description": "Account creation timestamp"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-09-07T10:00:00Z",
+            "description": "Last profile update timestamp"
+          },
+          "flashcardCount": {
+            "type": "integer",
+            "example": 25,
+            "description": "Number of flashcards owned by user"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-09-07T09:30:00Z",
+            "description": "Last login timestamp"
+          }
+        }
+      },
+      "FlashcardListResponse": {
+        "type": "object",
+        "required": ["flashcards", "count"],
+        "properties": {
+          "flashcards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Flashcard"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "example": 25,
+            "description": "Total number of flashcards"
+          }
+        }
+      },
+      "Flashcard": {
+        "type": "object",
+        "required": ["id", "english", "spanish", "userId", "difficulty", "reviewCount"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Flashcard unique identifier"
+          },
+          "english": {
+            "type": "string",
+            "example": "Hello",
+            "description": "English text"
+          },
+          "spanish": {
+            "type": "string",
+            "example": "Hola",
+            "description": "Spanish text"
+          },
+          "userId": {
+            "type": "integer",
+            "example": 1,
+            "description": "Owner user ID"
+          },
+          "difficulty": {
+            "type": "integer",
+            "example": 2,
+            "description": "Spaced repetition difficulty level"
+          },
+          "reviewCount": {
+            "type": "integer",
+            "example": 5,
+            "description": "Number of times reviewed"
+          },
+          "lastReviewed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-09-07T09:30:00Z",
+            "description": "Last review timestamp"
+          }
+        }
+      },
+      "SystemStats": {
+        "type": "object",
+        "required": ["totalUsers", "totalFlashcards", "activeUsers"],
+        "properties": {
+          "totalUsers": {
+            "type": "integer",
+            "example": 150,
+            "description": "Total number of registered users"
+          },
+          "totalFlashcards": {
+            "type": "integer",
+            "example": 2500,
+            "description": "Total number of flashcards across all users"
+          },
+          "activeUsers": {
+            "type": "integer",
+            "example": 42,
+            "description": "Number of users active in last 30 days"
+          },
+          "adminUsers": {
+            "type": "integer",
+            "example": 2,
+            "description": "Number of admin users"
+          }
+        }
+      },
+      "PaginationInfo": {
+        "type": "object",
+        "required": ["page", "limit", "total", "totalPages"],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "example": 1,
+            "description": "Current page number"
+          },
+          "limit": {
+            "type": "integer",
+            "example": 20,
+            "description": "Items per page"
+          },
+          "total": {
+            "type": "integer",
+            "example": 150,
+            "description": "Total number of items"
+          },
+          "totalPages": {
+            "type": "integer",
+            "example": 8,
+            "description": "Total number of pages"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "message"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "FORBIDDEN",
+            "description": "Error code"
+          },
+          "message": {
+            "type": "string",
+            "example": "Admin access required",
+            "description": "Human-readable error message"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error details"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "req-123456789",
+            "description": "Unique request identifier for debugging"
+          }
+        }
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "required": ["success", "message"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true,
+            "description": "Operation success status"
+          },
+          "message": {
+            "type": "string",
+            "example": "User deleted successfully",
+            "description": "Success message"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token in Authorization header (admin role required)"
+      }
+    }
+  }
+}

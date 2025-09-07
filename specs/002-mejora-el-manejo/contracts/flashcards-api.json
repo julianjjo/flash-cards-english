@@ -1,0 +1,600 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Flash Cards User API",
+    "description": "Enhanced flashcard endpoints with user isolation",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000/api",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/flashcards": {
+      "get": {
+        "summary": "Get user's flashcards",
+        "description": "Retrieve all flashcards belonging to the authenticated user",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User's flashcards retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flashcard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create new flashcard",
+        "description": "Create a new flashcard for the authenticated user",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFlashcardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Flashcard created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/flashcards/{flashcardId}": {
+      "get": {
+        "summary": "Get specific flashcard",
+        "description": "Retrieve a specific flashcard (user can only access their own)",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "flashcardId",
+            "in": "path",
+            "description": "Flashcard ID to retrieve",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flashcard retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied - not your flashcard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update flashcard",
+        "description": "Update a flashcard (user can only update their own)",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "flashcardId",
+            "in": "path",
+            "description": "Flashcard ID to update",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFlashcardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Flashcard updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied - not your flashcard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete flashcard",
+        "description": "Delete a flashcard (user can only delete their own)",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "flashcardId",
+            "in": "path",
+            "description": "Flashcard ID to delete",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flashcard deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied - not your flashcard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/flashcards/{flashcardId}/review": {
+      "post": {
+        "summary": "Review flashcard",
+        "description": "Update flashcard difficulty based on spaced repetition review",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "flashcardId",
+            "in": "path",
+            "description": "Flashcard ID to review",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewFlashcardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Review recorded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid difficulty value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied - not your flashcard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/flashcards/study": {
+      "get": {
+        "summary": "Get flashcards for study session",
+        "description": "Get user's flashcards ordered by spaced repetition algorithm",
+        "tags": ["Flashcards"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of flashcards for study session",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Study flashcards retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flashcard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Flashcard": {
+        "type": "object",
+        "required": ["id", "english", "spanish", "userId", "difficulty", "reviewCount"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Flashcard unique identifier"
+          },
+          "english": {
+            "type": "string",
+            "example": "Hello",
+            "description": "English text"
+          },
+          "spanish": {
+            "type": "string",
+            "example": "Hola",
+            "description": "Spanish text"
+          },
+          "userId": {
+            "type": "integer",
+            "example": 1,
+            "description": "Owner user ID"
+          },
+          "difficulty": {
+            "type": "integer",
+            "example": 2,
+            "description": "Spaced repetition difficulty level"
+          },
+          "reviewCount": {
+            "type": "integer",
+            "example": 5,
+            "description": "Number of times reviewed"
+          },
+          "lastReviewed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-09-07T09:30:00Z",
+            "description": "Last review timestamp"
+          }
+        }
+      },
+      "CreateFlashcardRequest": {
+        "type": "object",
+        "required": ["english", "spanish"],
+        "properties": {
+          "english": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "example": "Hello",
+            "description": "English text for the flashcard"
+          },
+          "spanish": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "example": "Hola",
+            "description": "Spanish text for the flashcard"
+          }
+        }
+      },
+      "UpdateFlashcardRequest": {
+        "type": "object",
+        "properties": {
+          "english": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "example": "Hello",
+            "description": "Updated English text"
+          },
+          "spanish": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "example": "Hola",
+            "description": "Updated Spanish text"
+          }
+        }
+      },
+      "ReviewFlashcardRequest": {
+        "type": "object",
+        "required": ["difficulty"],
+        "properties": {
+          "difficulty": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "example": 3,
+            "description": "New difficulty level based on review performance"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "message"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "VALIDATION_ERROR",
+            "description": "Error code"
+          },
+          "message": {
+            "type": "string",
+            "example": "English text is required",
+            "description": "Human-readable error message"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error details"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "req-123456789",
+            "description": "Unique request identifier for debugging"
+          }
+        }
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "required": ["success", "message"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true,
+            "description": "Operation success status"
+          },
+          "message": {
+            "type": "string",
+            "example": "Flashcard deleted successfully",
+            "description": "Success message"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token in Authorization header"
+      }
+    }
+  }
+}

@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import AdminLogin from './AdminLogin';
+import { useAuth } from '../contexts/AuthContext';
+import AdminUserList from '../components/AdminUserList';
+import AdminUserManagement from '../components/AdminUserManagement';
 import TipsDisplay from '../components/TipsDisplay.jsx';
+import tokenStorage from '../utils/storageUtils.js';
 
 const API_URL = '\/api/cards';
 
 function Admin() {
+  const { user, isAuthenticated } = useAuth();
   const [regenerating, setRegenerating] = useState({});
-  const [loggedIn, setLoggedIn] = useState(!!sessionStorage.getItem('admin_auth'));
   const [showForm, setShowForm] = useState(false); // Para mostrar/ocultar el formulario
   const [generatingTips, setGeneratingTips] = useState({}); // Estado para loading de tips
-  // Si no está logueado, mostrar el login
-  if (!loggedIn) return <AdminLogin onLogin={() => setLoggedIn(true)} />;
+  const [activeTab, setActiveTab] = useState('cards'); // 'cards' or 'users'
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const [cards, setCards] = useState([]);
   const [page, setPage] = useState(1);
@@ -39,35 +42,69 @@ function Admin() {
     30 * 24 * 60 * 60 * 1000  // 30 días
   ];
 
-  const fetchDueCards = () => {
-    fetch('\/api/cards\/next', {
-      headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` }
-    })
-      .then(res => res.json())
-      .then(data => setDueCards(data));
+  const fetchDueCards = async () => {
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      };
+      
+      const response = await fetch('\/api/cards\/next', { headers });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError('Session expired. Please log in again.');
+          return;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setDueCards(data);
+      setError(''); // Clear any previous errors
+    } catch (err) {
+      console.error('Error fetching due cards:', err);
+      setError('Failed to load due cards. Please try again.');
+    }
   };
 
   useEffect(() => {
-    if (loggedIn) {
+    if (isAuthenticated && user?.role === 'admin') {
       fetchCards();
       fetchDueCards();
     }
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [loggedIn]);
+  }, [isAuthenticated, user?.role]);
 
-  // ... resto igual ...
-
-  const fetchCards = () => {
+  const fetchCards = async () => {
     setLoading(true);
-    fetch(API_URL, {
-      headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        setCards(data);
-        setLoading(false);
-      });
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      };
+      
+      const response = await fetch(API_URL, { headers });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError('Session expired. Please log in again.');
+          setLoading(false);
+          return;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setCards(data);
+      setError(''); // Clear any previous errors
+    } catch (err) {
+      console.error('Error fetching cards:', err);
+      setError('Failed to load cards. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Filtrar tarjetas según búsqueda
@@ -92,7 +129,10 @@ function Admin() {
     }
     setError('');
     setSubmitting(true);
-    const headers = { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` };
+    const headers = {
+      'Content-Type': 'application/json',
+      ...tokenStorage.getAuthHeaders()
+    };
     let body, contentType;
     if (audioFile) {
       // Usar FormData si hay audio
@@ -135,7 +175,10 @@ function Admin() {
 
   const handleDelete = id => {
     if (!window.confirm('¿Eliminar esta tarjeta?')) return;
-    fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } }).then(fetchCards);
+    fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      } }).then(fetchCards);
   };
 
   const handleCancel = () => {
@@ -146,8 +189,52 @@ function Admin() {
     setExistingAudio(null);
   };
 
+  // User management handlers
+  const handleUserSelect = (selectedUser) => {
+    setSelectedUser(selectedUser);
+  };
+
+  const handleUserUpdate = (updatedUser) => {
+    setSelectedUser(updatedUser);
+    // Optionally refresh user list here
+  };
+
+  const handleUserDelete = (deletedUser) => {
+    setSelectedUser(null);
+    // Optionally refresh user list here
+  };
+
   return (
-    <div className="max-w-6xl mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-8">
+    <div className="max-w-6xl mx-auto p-4">
+      {/* Tab Navigation */}
+      <div className="mb-6">
+        <nav className="flex space-x-8">
+          <button
+            onClick={() => setActiveTab('cards')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'cards'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Gestión de Tarjetas
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'users'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Gestión de Usuarios
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === 'cards' ? (
+        // Cards Management Tab
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
       {/* Columna 1: Próximas a repasar */}
       <section className="bg-green-50 rounded-lg shadow p-5 border border-green-200 h-fit">
         <h3 className="font-semibold mb-2 text-lg text-green-700">Próximas a repasar</h3>
@@ -188,7 +275,10 @@ function Admin() {
                     <button
                       className="ml-4 px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition"
                       onClick={async () => {
-                        await fetch(`/api/cards/${card.id}/review`, { method: 'POST', headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` } });
+                        await fetch(`/api/cards/${card.id}/review`, { method: 'POST', headers: {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      } });
                         fetchDueCards();
                         fetchCards();
                       }}
@@ -288,7 +378,10 @@ function Admin() {
                           try {
                             const res = await fetch(`${API_URL}/${card.id}/regenerate-audio`, {
                               method: 'POST',
-                              headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                              headers: {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      },
                             });
                             if (!res.ok) throw new Error('Error regenerando audio');
                             const data = await res.json();
@@ -309,7 +402,10 @@ function Admin() {
                           try {
                             const res = await fetch(`${API_URL}/${card.id}/regenerate-tips`, {
                               method: 'POST',
-                              headers: { Authorization: `Basic ${sessionStorage.getItem('admin_auth')}` },
+                              headers: {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      },
                             });
                             if (!res.ok) throw new Error('Error generando tips');
                             const data = await res.json();
@@ -345,7 +441,7 @@ function Admin() {
                           await fetch(`${API_URL}/${card.id}`, {
                             method: 'PUT',
                             headers: {
-                              Authorization: `Basic ${sessionStorage.getItem('admin_auth')}`,
+                              ...tokenStorage.getAuthHeaders(),
                               'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({
@@ -437,6 +533,25 @@ function Admin() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+        </div>
+      ) : (
+        // Users Management Tab
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div>
+            <AdminUserList 
+              onUserSelect={handleUserSelect}
+              selectedUserId={selectedUser?.id}
+            />
+          </div>
+          <div>
+            <AdminUserManagement
+              selectedUser={selectedUser}
+              onUserUpdate={handleUserUpdate}
+              onUserDelete={handleUserDelete}
+            />
           </div>
         </div>
       )}

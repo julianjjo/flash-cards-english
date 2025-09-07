@@ -71,6 +71,30 @@ export const requireAuth = async (req, res, next) => {
 };
 
 /**
+ * Require admin role
+ * Middleware that requires user to have admin role (must be used after requireAuth)
+ */
+export const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      message: 'No user context',
+      code: 'NO_USER_CONTEXT'
+    });
+  }
+
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      error: 'Access forbidden',
+      message: 'Admin role required',
+      code: 'INSUFFICIENT_PERMISSIONS'
+    });
+  }
+
+  next();
+};
+
+/**
  * Optional authentication
  * Middleware that validates JWT token if present but doesn't require it
  * Useful for endpoints that provide different responses for authenticated users
@@ -348,6 +372,7 @@ export const authErrorHandler = (error, req, res, next) => {
 
 export default {
   requireAuth,
+  requireAdmin,
   optionalAuth,
   validateRefreshToken,
   authRateLimit,
