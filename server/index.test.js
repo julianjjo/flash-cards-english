@@ -63,3 +63,65 @@ describe('Cards API', () => {
     expect(new Date(res.body.nextReview)).toBeInstanceOf(Date);
   });
 });
+
+// TDD Contract Tests - These MUST FAIL initially (Gemini TTS not implemented yet)
+describe('TTS Contract Tests - Gemini Integration', () => {
+  let testCardId;
+
+  test('T004: POST /api/cards generates audio with Gemini TTS', async () => {
+    const res = await request(app)
+      .post('/api/cards')
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
+      .send({ en: 'Hello world', es: 'Hola mundo' });
+    
+    expect(res.statusCode).toBe(201);
+    expect(res.body.en).toBe('Hello world');
+    expect(res.body.es).toBe('Hola mundo');
+    
+    // Contract: audio_url should be generated (or null in test mode)
+    expect(res.body.audio_url).toBeDefined();
+    
+    // Contract: response structure must match existing ElevenLabs format
+    expect(res.body).toHaveProperty('id');
+    expect(res.body).toHaveProperty('level', 0);
+    expect(res.body).toHaveProperty('nextReview');
+    expect(res.body).toHaveProperty('tips');
+    
+    testCardId = res.body.id;
+  });
+
+  test('T005: PUT /api/cards/:id regenerates audio when text changes', async () => {
+    const res = await request(app)
+      .put(`/api/cards/${testCardId}`)
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS)
+      .send({ en: 'Updated text', es: 'Texto actualizado' });
+    
+    expect(res.statusCode).toBe(200);
+    expect(res.body.en).toBe('Updated text');
+    
+    // Contract: audio_url should be updated when English text changes
+    expect(res.body.audio_url).toBeDefined();
+    
+    // Contract: response structure unchanged
+    expect(res.body).toHaveProperty('id');
+    expect(res.body).toHaveProperty('level');
+    expect(res.body).toHaveProperty('nextReview');
+  });
+
+  test('T006: POST /api/cards/:id/regenerate-audio forces TTS regeneration', async () => {
+    const res = await request(app)
+      .post(`/api/cards/${testCardId}/regenerate-audio`)
+      .auth(process.env.ADMIN_USER, process.env.ADMIN_PASS);
+    
+    expect(res.statusCode).toBe(200);
+    
+    // Contract: must return updated card with new audio_url
+    expect(res.body).toHaveProperty('id', testCardId);
+    expect(res.body.audio_url).toBeDefined();
+    
+    // Contract: same response structure as other endpoints
+    expect(res.body).toHaveProperty('en');
+    expect(res.body).toHaveProperty('es');
+    expect(res.body).toHaveProperty('level');
+  });
+});
