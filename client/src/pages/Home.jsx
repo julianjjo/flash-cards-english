@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import TipsDisplay from '../components/TipsDisplay.jsx';
+import tokenStorage from '../utils/storageUtils.js';
 
 const API_URL = '\/api/cards';
 
@@ -19,43 +20,126 @@ function Home() {
   const [flipped, setFlipped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const audioRef = React.useRef(null);
 
   useEffect(() => {
-    fetch('\/api/cards\/next')
-      .then(res => res.json())
-      .then(data => {
+    // Check authentication status
+    const authenticated = tokenStorage.isAuthenticated();
+    setIsAuthenticated(authenticated);
+
+    if (!authenticated) {
+      setLoading(false);
+      setError('Please log in to access your flashcards');
+      return;
+    }
+
+    // Load cards with authentication
+    const loadCards = async () => {
+      try {
+        const headers = {
+          'Content-Type': 'application/json',
+          ...tokenStorage.getAuthHeaders()
+        };
+
+        const response = await fetch('\/api/cards\/next', { headers });
+        
+        if (!response.ok) {
+          if (response.status === 401) {
+            setError('Session expired. Please log in again.');
+            tokenStorage.clearAll();
+            setIsAuthenticated(false);
+            return;
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
         setCards(data);
+        setError(null);
+      } catch (err) {
+        console.error('Error loading cards:', err);
+        setError('Failed to load cards. Please try again.');
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadCards();
   }, []);
 
   const handleFlip = () => setFlipped(f => !f);
 
-  const handleAnswer = (knewIt) => {
-    const card = cards[current];
-    let level = card.level || 0;
-    level = knewIt ? level + 1 : 0;
-    const nextReview = new Date(Date.now() + getNextInterval(level)).toISOString();
-    fetch(`${API_URL}/${card.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level, nextReview })
-    }).then(() => {
+  const handleAnswer = async (knewIt) => {
+    if (!isAuthenticated) {
+      setError('Please log in to answer cards');
+      return;
+    }
+
+    try {
+      const card = cards[current];
+      let level = card.level || 0;
+      level = knewIt ? level + 1 : 0;
+      const nextReview = new Date(Date.now() + getNextInterval(level)).toISOString();
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        ...tokenStorage.getAuthHeaders()
+      };
+
+      const response = await fetch(`${API_URL}/${card.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ level, nextReview })
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError('Session expired. Please log in again.');
+          tokenStorage.clearAll();
+          setIsAuthenticated(false);
+          return;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Update UI after successful answer
       const newCards = cards.filter((_, i) => i !== current);
       setCards(newCards);
       setFlipped(false);
       setCurrent(0);
+      setError(null);
+
+      // Load more cards if needed
       if (newCards.length === 0) {
         setLoading(true);
-        fetch('\/api/cards\/next')
-          .then(res => res.json())
-          .then(data => {
-            setCards(data);
-            setLoading(false);
-          });
+        try {
+          const nextResponse = await fetch('\/api/cards\/next', { headers });
+          
+          if (!nextResponse.ok) {
+            if (nextResponse.status === 401) {
+              setError('Session expired. Please log in again.');
+              tokenStorage.clearAll();
+              setIsAuthenticated(false);
+              return;
+            }
+            throw new Error(`HTTP ${nextResponse.status}: ${nextResponse.statusText}`);
+          }
+
+          const data = await nextResponse.json();
+          setCards(data);
+        } catch (err) {
+          console.error('Error loading next cards:', err);
+          setError('Failed to load more cards. Please refresh the page.');
+        } finally {
+          setLoading(false);
+        }
       }
-    });
+    } catch (err) {
+      console.error('Error answering card:', err);
+      setError('Failed to save answer. Please try again.');
+    }
   };
 
   const playAudio = () => {
@@ -66,8 +150,59 @@ function Home() {
     }
   };
 
-  if (loading) return <div className="text-gray-500">Cargando tarjetas...</div>;
-  if (cards.length === 0) return <div className="text-gray-500">¡No hay tarjetas para repasar ahora!</div>;
+  // Handle loading state
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64">
+        <div className="text-gray-500">Cargando tarjetas...</div>
+      </div>
+    );
+  }
+
+  // Handle error states
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64">
+        <div className="text-red-500 mb-4">{error}</div>
+        {!isAuthenticated && (
+          <div className="space-x-2">
+            <button 
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+              onClick={() => window.location.href = '/login'}
+            >
+              Log In
+            </button>
+            <button 
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition"
+              onClick={() => window.location.href = '/register'}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
+        {isAuthenticated && (
+          <button 
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Handle no cards state
+  if (cards.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64">
+        <div className="text-gray-500 mb-4">¡No hay tarjetas para repasar ahora!</div>
+        <div className="text-sm text-gray-400">
+          Vuelve más tarde o <a href="/admin" className="text-blue-500 hover:underline">crea más tarjetas</a>
+        </div>
+      </div>
+    );
+  }
 
   const card = cards[current];
 

@@ -26,31 +26,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a full-stack flashcard application with spaced repetition learning:
 
 **Frontend (`/client`):**
-- React 19 with React Router for navigation
-- Vite for bundling and development
-- TailwindCSS for styling
-- Two main pages: Home (flashcard review) and Admin (card management)
-- Uses basic auth for admin access
+- React 19 with React Router 7.5.0 for navigation
+- Vite 6.2.0 for bundling and development
+- TailwindCSS 4.1.4 for styling
+- Authentication interfaces: Login, Registration, User Profile, Admin User Management
+- Main pages: Home (flashcard review), Admin (card management), Auth flows
+- JWT-based authentication with role-based access control
 
 **Backend (`/server`):**
 - Express.js server on port 4000
-- SQLite database (better-sqlite3) with flashcards table
-- RESTful API for CRUD operations on flashcards
+- SQLite database (better-sqlite3) with cards and users tables
+- RESTful API for CRUD operations on flashcards and user management
+- JWT authentication system with bcrypt password hashing
+- Role-based authorization (user/admin roles)
+- Authentication APIs: /api/auth/login, /api/auth/register, /api/auth/profile
+- Admin APIs: /api/admin/users (CRUD operations with role management)
 - Integration with Google Gemini TTS for text-to-speech (replacing ElevenLabs)
 - Google Gemini AI for generating study tips
 - AWS S3/Cloudflare R2 for file storage
-- Basic authentication for admin routes
 
 **Key Files:**
 - `server/index.js` - Main Express server with all API endpoints
 - `server/services/gemini-tts.js` - Gemini TTS service implementation
-- `client/src/App.jsx` - Main React app with routing
-- `client/src/pages/Home.jsx` - Flashcard review interface
-- `client/src/pages/Admin.jsx` - Admin panel for card management
-- `server/flashcards.db` - SQLite database
+- `client/src/App.jsx` - Main React app with routing and authentication
+- `client/src/pages/Home.jsx` - Flashcard review interface (protected)
+- `client/src/pages/Admin.jsx` - Admin panel for card management (admin only)
+- `client/src/components/auth/` - Authentication components (Login, Register, Profile)
+- `client/src/components/admin/` - Admin user management components
+- `client/src/hooks/useAuth.js` - Authentication context and hooks
+- `server/flashcards.db` - SQLite database with users and cards tables
 
 **Database Schema:**
-- Flashcards table with fields: id, english, spanish, difficulty, last_reviewed, review_count
+- Users table: id, email, password (hashed), role, created_at, updated_at, last_login
+- Cards table: id, en, es, level, nextReview, audio_url, tips, easeFactor, repetitions, lastInterval, user_id
 
 **External Services:**
 - Google Gemini TTS for audio generation (gemini-2.5-pro-preview-tts model)
