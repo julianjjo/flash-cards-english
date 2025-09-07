@@ -11,6 +11,15 @@ import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import { generateAudio } from './services/gemini-tts.js';
 
+// Import route modules
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
+import adminRoutes from './routes/admin.js';
+import flashcardRoutes from './routes/flashcards.js';
+import studyRoutes from './routes/study.js';
+import statsRoutes from './routes/stats.js';
+import bulkRoutes from './routes/bulk.js';
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
@@ -38,7 +47,19 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 4000;
 
-// Middleware de autenticación básica para admin
+app.use(cors());
+app.use(express.json());
+
+// Connect route modules (before auth middleware)
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/flashcards', flashcardRoutes);
+app.use('/api/study', studyRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/bulk', bulkRoutes);
+
+// Legacy basic auth middleware for old /api/cards endpoints
 function adminAuth(req, res, next) {
   // Solo proteger rutas /api/cards y /audio
   if (!req.path.startsWith('/api/cards') && !req.path.startsWith('/audio')) return next();
@@ -56,9 +77,6 @@ function adminAuth(req, res, next) {
   return res.status(401).send('Invalid credentials');
 }
 app.use(adminAuth);
-
-app.use(cors());
-app.use(express.json());
 
 // Endpoint para servir audios desde R2
 app.get('/audio/:filename', async (req, res) => {
