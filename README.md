@@ -20,15 +20,17 @@
 4. Configura las variables de entorno necesarias en el dashboard de Render:
     - `NODE_ENV=production`
     - `PORT=10000` (o el puerto que Render asigne)
-    - `ELEVENLABS_API_KEY` (tu clave privada, si usas audio)
+    - `GEMINI_API_KEY` (tu clave privada para generación de audio y tips)
 
 ## Variables de entorno
 
 Crea un archivo `.env` en la raíz del proyecto (NO lo subas al repo):
 
 ```
-ELEVENLABS_API_KEY=tu_clave
+GEMINI_API_KEY=tu_clave_de_gemini
 ```
+
+**Nota**: Desde la versión actual, la aplicación usa Google Gemini para generación de audio (TTS) y tips de estudio. La integración anterior con ElevenLabs ha sido reemplazada.
 
 ## Scripts útiles
 

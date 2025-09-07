@@ -9,13 +9,11 @@ import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
 import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
+import { generateAudio } from './services/gemini-tts.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
-const ELEVENLABS_MODEL_ID = 'eleven_multilingual_v2';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Cloudflare R2 config
@@ -174,27 +172,14 @@ app.post('/api/cards', upload.single('audio'), async (req, res) => {
       }));
       audio_url = `${R2_PUBLIC_URL}/${filename}`;
     } else if (!isTest) {
-      // Si no hay archivo y no es test, generar con ElevenLabs y subir a R2
-      const elevenRes = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
-        {
-          method: 'POST',
-          headers: {
-            'xi-api-key': ELEVENLABS_API_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            text: en,
-            model_id: ELEVENLABS_MODEL_ID,
-          }),
-        }
-      );
-      if (!elevenRes.ok) {
-        const apiError = await elevenRes.text();
-        console.error('[ElevenLabs ERROR]', { apiError });
+      // Si no hay archivo y no es test, generar con Gemini TTS y subir a R2
+      const ttsResult = await generateAudio(en, 'en');
+      if (!ttsResult.success) {
+        console.error('[Gemini TTS ERROR]', { error: ttsResult.error });
         return res.status(500).json({ error: 'Error generando audio' });
       }
-      audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
+      
+      audioBuffer = ttsResult.audioBuffer;
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: filename,
@@ -256,28 +241,17 @@ app.put('/api/cards/:id', upload.single('audio'), async (req, res) => {
   // Si el campo 'en' cambia, regenerar audio (solo si no es test)
   if (en && en !== card.en && !isTest) {
     try {
-      const elevenRes = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
-        {
-          method: 'POST',
-          headers: {
-            'xi-api-key': ELEVENLABS_API_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            text: en,
-            model_id: ELEVENLABS_MODEL_ID,
-          }),
-        }
-      );
-      if (!elevenRes.ok) throw new Error('Error generando audio ElevenLabs');
-      const audioBuffer = await elevenRes.arrayBuffer();
+      const ttsResult = await generateAudio(en, 'en');
+      if (!ttsResult.success) {
+        throw new Error(`Error generando audio: ${ttsResult.error}`);
+      }
+      
       const filename = `card_${Date.now()}.mp3`;
       // Subir a Cloudflare R2
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: filename,
-        Body: Buffer.from(audioBuffer),
+        Body: ttsResult.audioBuffer,
         ContentType: 'audio/mpeg',
       }));
       audio_url = `${R2_PUBLIC_URL}/${filename}`;
@@ -385,36 +359,21 @@ app.post('/api/cards/:id/regenerate-audio', async (req, res) => {
     let audio_url = card.audio_url;
 
     if (!isTest) {
-      // 3. Generamos el audio con ElevenLabs
-      const elevenRes = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
-        {
-          method: 'POST',
-          headers: {
-            'xi-api-key': ELEVENLABS_API_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            text: card.en,
-            model_id: ELEVENLABS_MODEL_ID,
-          }),
-        }
-      );
-
-      if (!elevenRes.ok) {
-        const apiError = await elevenRes.text();
-        console.error('[ElevenLabs ERROR]', apiError);
+      // 3. Generamos el audio con Gemini TTS
+      const ttsResult = await generateAudio(card.en, 'en');
+      
+      if (!ttsResult.success) {
+        console.error('[Gemini TTS ERROR]', ttsResult.error);
         return res.status(502).json({ error: 'Error generando audio' });
       }
 
-      const audioBuffer = Buffer.from(await elevenRes.arrayBuffer());
       const filename = `card_${Date.now()}.mp3`;
 
-      // 4. Subimos el MP3 a R2
+      // 4. Subimos el audio a R2
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: filename,
-        Body: audioBuffer,
+        Body: ttsResult.audioBuffer,
         ContentType: 'audio/mpeg',
       }));
       audio_url = `${R2_PUBLIC_URL}/${filename}`;
