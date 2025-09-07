@@ -85,29 +85,8 @@ if (isTest) {
   app.use('/audio', express.static(path.join(__dirname, 'audio')));
 }
 
-// Crear tabla si no existe (ahora con audio_url)
-// Cloudflare D1: crea la tabla si no existe
-(async () => {
-  try {
-    await queryD1(`CREATE TABLE IF NOT EXISTS cards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      en TEXT NOT NULL,
-      es TEXT NOT NULL,
-      level INTEGER DEFAULT 0,
-      nextReview TEXT,
-      audio_url TEXT,
-      tips TEXT,
-      easeFactor REAL DEFAULT 2.5,
-      repetitions INTEGER DEFAULT 0,
-      lastInterval INTEGER DEFAULT 0
-    );`);
-    await queryD1('ALTER TABLE cards ADD COLUMN easeFactor REAL DEFAULT 2.5;').catch(()=>{});
-    await queryD1('ALTER TABLE cards ADD COLUMN repetitions INTEGER DEFAULT 0;').catch(()=>{});
-    await queryD1('ALTER TABLE cards ADD COLUMN lastInterval INTEGER DEFAULT 0;').catch(()=>{});
-  } catch (e) {
-    console.error('Error creando tabla en D1:', e);
-  }
-})();
+// Database initialization moved to database.js migrations
+// This immediate execution was causing circular dependency issues in tests
 
 // GET todas las tarjetas
 app.get('/api/cards', async (req, res) => {

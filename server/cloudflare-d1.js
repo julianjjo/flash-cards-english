@@ -17,13 +17,24 @@ if (!isTestEnv) {
   }
 }
 
-import app from './index.js';
-
+// Use dynamic import to avoid circular dependency
 export async function queryD1(sql, params = []) {
-  if (isTestEnv && app.locals.db) {
-    // Ejecuta sobre la base de datos SQLite en memoria
+  if (isTestEnv) {
+    // In test environment, use SQLite directly via database config
     try {
-      const stmt = app.locals.db.prepare(sql);
+      const { default: database } = await import('./config/database.js');
+      
+      // Ensure database is initialized
+      let db;
+      try {
+        db = database.getDatabase();
+      } catch (initError) {
+        // Database not initialized, initialize it first
+        await database.initialize();
+        db = database.getDatabase();
+      }
+      
+      const stmt = db.prepare(sql);
       let result;
       if (sql.trim().toLowerCase().startsWith('select')) {
         result = stmt.all(...params);
