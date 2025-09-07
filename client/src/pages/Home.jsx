@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { studyApi, flashcardApi } from '../services/api';
 import TipsDisplay from '../components/TipsDisplay.jsx';
-import tokenStorage from '../utils/storageUtils.js';
 
-const API_URL = '\/api/cards';
 
 function spacedRepetition(card) {
   if (!card.nextReview) return true;
@@ -15,130 +16,55 @@ function getNextInterval(level) {
 }
 
 function Home() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [cards, setCards] = useState([]);
   const [current, setCurrent] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
-  const [error, setError] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const audioRef = React.useRef(null);
 
   useEffect(() => {
-    // Check authentication status
-    const authenticated = tokenStorage.isAuthenticated();
-    setIsAuthenticated(authenticated);
-
-    if (!authenticated) {
-      setLoading(false);
-      setError('Please log in to access your flashcards');
-      return;
-    }
-
-    // Load cards with authentication
+    if (!isAuthenticated) return;
+    
     const loadCards = async () => {
       try {
-        const headers = {
-          'Content-Type': 'application/json',
-          ...tokenStorage.getAuthHeaders()
-        };
-
-        const response = await fetch('\/api/cards\/next', { headers });
-        
-        if (!response.ok) {
-          if (response.status === 401) {
-            setError('Session expired. Please log in again.');
-            tokenStorage.clearAll();
-            setIsAuthenticated(false);
-            return;
-          }
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        setCards(data);
-        setError(null);
-      } catch (err) {
-        console.error('Error loading cards:', err);
-        setError('Failed to load cards. Please try again.');
+        setLoading(true);
+        const dueCards = await studyApi.getMyDueCards();
+        setCards(dueCards.cards || []);
+      } catch (error) {
+        console.error('Failed to load cards:', error);
+        setCards([]);
       } finally {
         setLoading(false);
       }
     };
-
+    
     loadCards();
-  }, []);
+  }, [isAuthenticated]);
 
   const handleFlip = () => setFlipped(f => !f);
 
   const handleAnswer = async (knewIt) => {
-    if (!isAuthenticated) {
-      setError('Please log in to answer cards');
-      return;
-    }
-
+    const card = cards[current];
+    const performanceRating = knewIt ? 4 : 1; // Good vs Again
+    
     try {
-      const card = cards[current];
-      let level = card.level || 0;
-      level = knewIt ? level + 1 : 0;
-      const nextReview = new Date(Date.now() + getNextInterval(level)).toISOString();
+      await studyApi.reviewCard(card.id, { performanceRating });
       
-      const headers = {
-        'Content-Type': 'application/json',
-        ...tokenStorage.getAuthHeaders()
-      };
-
-      const response = await fetch(`${API_URL}/${card.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ level, nextReview })
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          setError('Session expired. Please log in again.');
-          tokenStorage.clearAll();
-          setIsAuthenticated(false);
-          return;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      // Update UI after successful answer
       const newCards = cards.filter((_, i) => i !== current);
       setCards(newCards);
       setFlipped(false);
       setCurrent(0);
-      setError(null);
-
-      // Load more cards if needed
+      
       if (newCards.length === 0) {
         setLoading(true);
-        try {
-          const nextResponse = await fetch('\/api/cards\/next', { headers });
-          
-          if (!nextResponse.ok) {
-            if (nextResponse.status === 401) {
-              setError('Session expired. Please log in again.');
-              tokenStorage.clearAll();
-              setIsAuthenticated(false);
-              return;
-            }
-            throw new Error(`HTTP ${nextResponse.status}: ${nextResponse.statusText}`);
-          }
-
-          const data = await nextResponse.json();
-          setCards(data);
-        } catch (err) {
-          console.error('Error loading next cards:', err);
-          setError('Failed to load more cards. Please refresh the page.');
-        } finally {
-          setLoading(false);
-        }
+        const dueCards = await studyApi.getMyDueCards();
+        setCards(dueCards.cards || []);
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('Error answering card:', err);
-      setError('Failed to save answer. Please try again.');
+    } catch (error) {
+      console.error('Failed to review card:', error);
     }
   };
 
@@ -150,64 +76,37 @@ function Home() {
     }
   };
 
-  // Handle loading state
-  if (loading) {
+  // Show loading while checking authentication
+  if (authLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64">
-        <div className="text-gray-500">Cargando tarjetas...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
-  // Handle error states
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-64">
-        <div className="text-red-500 mb-4">{error}</div>
-        {!isAuthenticated && (
-          <div className="space-x-2">
-            <button 
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-              onClick={() => window.location.href = '/login'}
-            >
-              Log In
-            </button>
-            <button 
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition"
-              onClick={() => window.location.href = '/register'}
-            >
-              Sign Up
-            </button>
-          </div>
-        )}
-        {isAuthenticated && (
-          <button 
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-            onClick={() => window.location.reload()}
-          >
-            Retry
-          </button>
-        )}
-      </div>
-    );
+  // Redirect if not authenticated
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
   }
 
-  // Handle no cards state
-  if (cards.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-64">
-        <div className="text-gray-500 mb-4">¡No hay tarjetas para repasar ahora!</div>
-        <div className="text-sm text-gray-400">
-          Vuelve más tarde o <a href="/admin" className="text-blue-500 hover:underline">crea más tarjetas</a>
-        </div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
+  if (cards.length === 0) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <div className="text-4xl mb-4">🎉</div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">All caught up!</h2>
+        <p className="text-gray-600">No cards are due for review right now. Great job!</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   const card = cards[current];
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center">
       <h2 className="text-2xl font-semibold mb-4">Repaso de Tarjetas</h2>
       <div className="w-full max-w-2xl h-64 sm:h-80 perspective mb-6">
         <div
@@ -218,13 +117,13 @@ function Home() {
           {/* Front */}
           <div className="absolute w-full h-full bg-white rounded-lg shadow-lg flex items-center justify-center cursor-pointer backface-hidden px-6 py-4 overflow-auto">
             <span className="block text-xl sm:text-2xl font-bold text-center break-words whitespace-pre-line leading-snug">
-              {card.en}
+              {card.english || card.en}
             </span>
           </div>
           {/* Back */}
           <div className="absolute w-full h-full bg-blue-100 rounded-lg shadow-lg flex flex-col items-center justify-center cursor-pointer rotate-y-180 backface-hidden px-6 py-4 overflow-auto">
             <span className="block text-xl sm:text-2xl font-bold text-center break-words whitespace-pre-line leading-snug mb-2">
-              {card.es}
+              {card.spanish || card.es}
             </span>
             {/* Tips de Gemini */}
             {card.tips && <TipsDisplay tips={card.tips} />}
@@ -262,7 +161,9 @@ function Home() {
           No lo sé
         </button>
       </div>
-      <div className="mt-4 text-gray-400 text-sm">Haz click en la tarjeta para ver la respuesta</div>
+          <div className="mt-4 text-gray-400 text-sm">Haz click en la tarjeta para ver la respuesta</div>
+        </div>
+      </div>
     </div>
   );
 }

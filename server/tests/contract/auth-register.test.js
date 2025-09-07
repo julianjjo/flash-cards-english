@@ -1,152 +1,220 @@
 import request from 'supertest';
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 
-// Import the app - will be created later
-let app;
+/**
+ * Contract Test: POST /api/auth/register
+ * 
+ * This test validates the API contract for user registration endpoint
+ * according to the auth-api.json specification.
+ * 
+ * CRITICAL: This test MUST FAIL initially (TDD requirement)
+ * The endpoint does not exist yet - implementation comes after tests pass
+ */
 
-describe('POST /api/auth/register Contract Tests', () => {
+describe('POST /api/auth/register - Contract Test', () => {
+  let app;
+  let server;
+
   beforeAll(async () => {
-    // This test MUST fail until the endpoint is implemented
-    // Import will fail until server/index.js exports the app
-    try {
-      const appModule = await import('../../index.js');
-      app = appModule.default || appModule.app;
-    } catch (error) {
-      console.log('Expected: App not yet implemented');
-    }
+    // Import app after environment setup
+    const { default: appModule } = await import('../../index.js');
+    app = appModule;
   });
 
   afterAll(async () => {
-    // Clean up test database if needed
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
-  test('should register a new user with valid data', async () => {
-    expect(app).toBeDefined(); // This MUST fail initially
-
-    const validUserData = {
-      email: 'test@example.com',
-      password: 'TestPassword123'
-    };
-
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send(validUserData)
-      .expect('Content-Type', /json/)
-      .expect(201);
-
-    // Verify response structure matches OpenAPI spec
-    expect(response.body).toHaveProperty('success', true);
-    expect(response.body).toHaveProperty('message', 'User registered successfully');
-    expect(response.body).toHaveProperty('user');
-    expect(response.body).toHaveProperty('token');
-
-    // Verify user object structure
-    expect(response.body.user).toHaveProperty('id');
-    expect(response.body.user).toHaveProperty('email', 'test@example.com');
-    expect(response.body.user).toHaveProperty('role', 'user');
-    expect(response.body.user).toHaveProperty('created_at');
-    expect(response.body.user).not.toHaveProperty('password'); // Password should not be returned
-
-    // Verify token is a string
-    expect(typeof response.body.token).toBe('string');
-    expect(response.body.token.length).toBeGreaterThan(0);
+  beforeEach(async () => {
+    // Clean up users table for each test
+    // Note: This will fail until database and models are implemented
+    try {
+      const { default: db } = await import('../../config/database.js');
+      await db.initialize();
+      db.getDatabase().prepare('DELETE FROM users WHERE email LIKE ?').run('%test%');
+    } catch (error) {
+      // Expected to fail during TDD phase - database not set up yet
+      console.log('Database cleanup failed (expected during TDD):', error.message);
+    }
   });
 
-  test('should reject registration with invalid email format', async () => {
-    expect(app).toBeDefined();
+  describe('Valid Registration Request', () => {
+    test('should return 201 with user profile for valid registration data', async () => {
+      const registrationData = {
+        email: 'test@example.com',
+        password: 'password123'
+      };
 
-    const invalidEmailData = {
-      email: 'invalid-email',
-      password: 'TestPassword123'
-    };
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(201);
 
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send(invalidEmailData)
-      .expect('Content-Type', /json/)
-      .expect(400);
+      // Validate response structure matches contract
+      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty('email', 'test@example.com');
+      expect(response.body).toHaveProperty('role', 'user');
+      expect(response.body).toHaveProperty('createdAt');
+      expect(typeof response.body.id).toBe('number');
+      expect(typeof response.body.createdAt).toBe('string');
+      
+      // Ensure password is not returned
+      expect(response.body).not.toHaveProperty('password');
+      expect(response.body).not.toHaveProperty('password_hash');
+    });
 
-    // Verify error response structure
-    expect(response.body).toHaveProperty('success', false);
-    expect(response.body).toHaveProperty('message', 'Validation failed');
-    expect(response.body).toHaveProperty('errors');
-    expect(response.body.errors).toHaveProperty('email');
+    test('should store email in lowercase', async () => {
+      const registrationData = {
+        email: 'TEST@EXAMPLE.COM',
+        password: 'password123'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect(201);
+
+      expect(response.body.email).toBe('test@example.com');
+    });
   });
 
-  test('should reject registration with short password', async () => {
-    expect(app).toBeDefined();
+  describe('Invalid Registration Requests', () => {
+    test('should return 400 for missing email', async () => {
+      const registrationData = {
+        password: 'password123'
+      };
 
-    const shortPasswordData = {
-      email: 'test2@example.com',
-      password: '123'
-    };
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(400);
 
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send(shortPasswordData)
-      .expect('Content-Type', /json/)
-      .expect(400);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.error).toBe('VALIDATION_ERROR');
+      expect(response.body.message).toMatch(/email/i);
+    });
 
-    expect(response.body).toHaveProperty('success', false);
-    expect(response.body).toHaveProperty('message', 'Validation failed');
-    expect(response.body).toHaveProperty('errors');
-    expect(response.body.errors).toHaveProperty('password');
+    test('should return 400 for missing password', async () => {
+      const registrationData = {
+        email: 'test@example.com'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.error).toBe('VALIDATION_ERROR');
+      expect(response.body.message).toMatch(/password/i);
+    });
+
+    test('should return 400 for invalid email format', async () => {
+      const registrationData = {
+        email: 'invalid-email',
+        password: 'password123'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(400);
+
+      expect(response.body.error).toBe('VALIDATION_ERROR');
+      expect(response.body.message).toMatch(/email/i);
+    });
+
+    test('should return 400 for password shorter than 8 characters', async () => {
+      const registrationData = {
+        email: 'test@example.com',
+        password: 'short'
+      };
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(400);
+
+      expect(response.body.error).toBe('VALIDATION_ERROR');
+      expect(response.body.message).toMatch(/password.*8/i);
+    });
+
+    test('should return 409 for duplicate email registration', async () => {
+      const registrationData = {
+        email: 'duplicate@example.com',
+        password: 'password123'
+      };
+
+      // First registration should succeed
+      await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect(201);
+
+      // Second registration with same email should fail
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send(registrationData)
+        .expect('Content-Type', /json/)
+        .expect(409);
+
+      expect(response.body.error).toBe('EMAIL_ALREADY_EXISTS');
+      expect(response.body.message).toMatch(/already.*registered/i);
+    });
   });
 
-  test('should reject registration with missing required fields', async () => {
-    expect(app).toBeDefined();
+  describe('Response Format Validation', () => {
+    test('should include requestId in error responses', async () => {
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'invalid' })
+        .expect(400);
 
-    const incompleteData = {
-      email: 'test3@example.com'
-      // password missing
-    };
+      expect(response.body).toHaveProperty('requestId');
+      expect(typeof response.body.requestId).toBe('string');
+    });
 
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send(incompleteData)
-      .expect('Content-Type', /json/)
-      .expect(400);
+    test('should return consistent error structure', async () => {
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send({})
+        .expect(400);
 
-    expect(response.body).toHaveProperty('success', false);
-    expect(response.body).toHaveProperty('errors');
-    expect(response.body.errors).toHaveProperty('password');
+      // Validate error response structure matches contract
+      expect(response.body).toHaveProperty('error');
+      expect(response.body).toHaveProperty('message');
+      expect(typeof response.body.error).toBe('string');
+      expect(typeof response.body.message).toBe('string');
+    });
   });
 
-  test('should reject registration with duplicate email', async () => {
-    expect(app).toBeDefined();
+  describe('Content-Type Validation', () => {
+    test('should reject non-JSON requests', async () => {
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send('email=test@example.com&password=password123')
+        .expect(400);
 
-    const userData = {
-      email: 'duplicate@example.com',
-      password: 'TestPassword123'
-    };
+      expect(response.body.error).toBe('INVALID_CONTENT_TYPE');
+    });
 
-    // First registration should succeed
-    await request(app)
-      .post('/api/auth/register')
-      .send(userData)
-      .expect(201);
+    test('should require Content-Type: application/json', async () => {
+      const response = await request(app)
+        .post('/api/auth/register')
+        .set('Content-Type', 'text/plain')
+        .send('{"email":"test@example.com","password":"password123"}')
+        .expect(400);
 
-    // Second registration with same email should fail
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send(userData)
-      .expect('Content-Type', /json/)
-      .expect(409);
-
-    expect(response.body).toHaveProperty('success', false);
-    expect(response.body.message).toContain('already exists');
-  });
-
-  test('should handle empty request body', async () => {
-    expect(app).toBeDefined();
-
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({})
-      .expect('Content-Type', /json/)
-      .expect(400);
-
-    expect(response.body).toHaveProperty('success', false);
-    expect(response.body).toHaveProperty('errors');
+      expect(response.body.error).toBe('INVALID_CONTENT_TYPE');
+    });
   });
 });

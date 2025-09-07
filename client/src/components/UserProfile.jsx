@@ -1,378 +1,532 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { userApi } from '../services/api';
+
+/**
+ * UserProfile Component
+ * 
+ * Provides user profile management interface.
+ * Features:
+ * - Profile information display and editing
+ * - Password change functionality
+ * - Study statistics and progress
+ * - Account settings and preferences
+ * - Account deletion option
+ */
 
 const UserProfile = () => {
-  const { user, updateProfile, deleteAccount, logout, isLoading, error, clearError } = useAuth();
+  const { user, updateProfile, changePassword, deleteAccount, isLoading } = useAuth();
+  const [userStats, setUserStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('profile');
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [formData, setFormData] = useState({
+  
+  // Profile editing state
+  const [profileData, setProfileData] = useState({
     email: user?.email || ''
   });
-  const [deleteData, setDeleteData] = useState({
-    password: '',
-    confirmDelete: ''
+  
+  // Password change state
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmNewPassword: ''
   });
-  const [formErrors, setFormErrors] = useState({});
+  
+  const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    
-    // Clear field error when user starts typing
-    if (formErrors[name]) {
-      setFormErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
-  };
-
-  const handleDeleteChange = (e) => {
-    const { name, value } = e.target;
-    setDeleteData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    
-    // Clear field error when user starts typing
-    if (formErrors[name]) {
-      setFormErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!formData.email.trim()) {
-      errors.email = 'El email es requerido';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      errors.email = 'El email no tiene un formato válido';
-    }
-    
-    return errors;
-  };
-
-  const validateDeleteForm = () => {
-    const errors = {};
-    
-    if (!deleteData.password) {
-      errors.password = 'La contraseña es requerida';
-    }
-    
-    if (deleteData.confirmDelete !== 'ELIMINAR') {
-      errors.confirmDelete = 'Debes escribir "ELIMINAR" para confirmar';
-    }
-    
-    return errors;
-  };
-
-  const handleEditClick = () => {
-    setIsEditing(true);
-    setFormData({
-      email: user?.email || ''
-    });
-    clearError();
-    setSuccessMessage('');
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setFormData({
-      email: user?.email || ''
-    });
-    setFormErrors({});
-    clearError();
-  };
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    
-    // Clear previous errors and messages
-    setFormErrors({});
-    clearError();
-    setSuccessMessage('');
-    
-    // Validate form
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-    
-    try {
-      const result = await updateProfile({
-        email: formData.email.trim()
+  // Load user stats and reset form data when user changes
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        email: user.email || ''
       });
       
-      if (result.success) {
-        setIsEditing(false);
-        setSuccessMessage('Perfil actualizado exitosamente');
-        setTimeout(() => setSuccessMessage(''), 5000);
-      } else {
-        if (result.errors) {
-          setFormErrors(result.errors);
+      // Load user statistics
+      const loadUserStats = async () => {
+        try {
+          setStatsLoading(true);
+          const stats = await userApi.getMyStats();
+          setUserStats(stats);
+        } catch (error) {
+          console.error('Failed to load user stats:', error);
+        } finally {
+          setStatsLoading(false);
         }
-      }
-    } catch (err) {
-      console.error('Profile update error:', err);
+      };
+      
+      loadUserStats();
+    }
+  }, [user]);
+
+  // Clear messages after delay
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
+  // Handle profile data changes
+  const handleProfileChange = (e) => {
+    const { name, value } = e.target;
+    setProfileData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+
+    // Clear field error
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
     }
   };
 
-  const handleDeleteAccount = async (e) => {
+  // Handle password data changes
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+
+    // Clear field error
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
+    }
+  };
+
+  // Validate email
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) return 'Email is required';
+    if (!emailRegex.test(email)) return 'Please enter a valid email address';
+    return null;
+  };
+
+  // Validate password
+  const validatePassword = (password) => {
+    if (!password) return 'Password is required';
+    if (password.length < 6) return 'Password must be at least 6 characters';
+    return null;
+  };
+
+  // Handle profile update
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
     
-    // Clear previous errors
-    setFormErrors({});
-    clearError();
-    
-    // Validate delete form
-    const errors = validateDeleteForm();
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
+    const emailError = validateEmail(profileData.email);
+    if (emailError) {
+      setErrors({ email: emailError });
       return;
     }
+
+    setIsSubmitting(true);
+    try {
+      await updateProfile(profileData);
+      setSuccessMessage('Profile updated successfully!');
+      setIsEditing(false);
+      setErrors({});
+    } catch (error) {
+      setErrors({ submit: error.message || 'Failed to update profile' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle password change
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
     
+    const currentPasswordError = validatePassword(passwordData.currentPassword);
+    const newPasswordError = validatePassword(passwordData.newPassword);
+    const confirmError = passwordData.newPassword !== passwordData.confirmNewPassword 
+      ? 'Passwords do not match' : null;
+
+    const formErrors = {};
+    if (currentPasswordError) formErrors.currentPassword = currentPasswordError;
+    if (newPasswordError) formErrors.newPassword = newPasswordError;
+    if (confirmError) formErrors.confirmNewPassword = confirmError;
+
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      const result = await deleteAccount(deleteData.password);
-      
-      if (result.success) {
-        // Account deleted, user will be logged out automatically
-        // Redirect handled by the auth context
-      } else {
-        if (result.errors) {
-          setFormErrors(result.errors);
-        }
-      }
-    } catch (err) {
-      console.error('Account deletion error:', err);
+      await changePassword({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+      setSuccessMessage('Password changed successfully!');
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmNewPassword: ''
+      });
+      setErrors({});
+    } catch (error) {
+      setErrors({ password: error.message || 'Failed to change password' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleLogout = async () => {
+  // Handle account deletion
+  const handleDeleteAccount = async () => {
+    setIsSubmitting(true);
     try {
-      await logout();
-    } catch (err) {
-      console.error('Logout error:', err);
+      await deleteAccount();
+    } catch (error) {
+      setErrors({ delete: error.message || 'Failed to delete account' });
+    } finally {
+      setIsSubmitting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
-  if (!user) {
+  // Format date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  if (isLoading || !user) {
     return (
-      <div className="text-center">
-        <p className="text-gray-600">Cargando perfil...</p>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white shadow-md rounded-lg overflow-hidden">
-        {/* Header */}
-        <div className="bg-gray-50 px-6 py-4 border-b">
-          <h2 className="text-2xl font-bold text-gray-800">Mi Perfil</h2>
+    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md">
+      {/* Success Message */}
+      {successMessage && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm text-green-700">{successMessage}</p>
         </div>
-        
-        {/* Success Message */}
-        {successMessage && (
-          <div className="mx-6 mt-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-            {successMessage}
-          </div>
-        )}
-        
-        {/* Error Message */}
-        {error && (
-          <div className="mx-6 mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-        
-        {/* Profile Content */}
-        <div className="px-6 py-6">
-          {!isEditing ? (
-            // View Mode
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
-                <p className="mt-1 text-lg text-gray-900">{user.email}</p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Rol</label>
-                <span className={`mt-1 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  user.role === 'admin' 
-                    ? 'bg-purple-100 text-purple-800' 
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {user.role === 'admin' ? 'Administrador' : 'Usuario'}
-                </span>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Miembro desde</label>
-                <p className="mt-1 text-gray-900">
-                  {user.created_at ? new Date(user.created_at).toLocaleDateString('es-ES') : 'N/A'}
-                </p>
-              </div>
-              
-              <div className="flex space-x-3 pt-4">
+      )}
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="flex space-x-8 px-6 py-4">
+          {[
+            { id: 'profile', label: 'Profile', icon: '👤' },
+            { id: 'password', label: 'Password', icon: '🔒' },
+            { id: 'stats', label: 'Statistics', icon: '📊' },
+            { id: 'settings', label: 'Settings', icon: '⚙️' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center space-x-2 py-2 px-1 border-b-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <div className="p-6">
+        {/* Profile Tab */}
+        {activeTab === 'profile' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-medium text-gray-900">Profile Information</h3>
+              {!isEditing && (
                 <button
-                  onClick={handleEditClick}
-                  className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                  onClick={() => setIsEditing(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  Editar Perfil
+                  Edit Profile
                 </button>
-                
+              )}
+            </div>
+
+            {isEditing ? (
+              <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    value={profileData.email}
+                    onChange={handleProfileChange}
+                    className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-1 ${
+                      errors.email
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-gray-300 focus:ring-blue-500'
+                    }`}
+                    disabled={isSubmitting}
+                  />
+                  {errors.email && (
+                    <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+                  )}
+                </div>
+
+                {errors.submit && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                    <p className="text-sm text-red-700">{errors.submit}</p>
+                  </div>
+                )}
+
+                <div className="flex space-x-4">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400"
+                  >
+                    {isSubmitting ? 'Updating...' : 'Update Profile'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setProfileData({ email: user.email });
+                      setErrors({});
+                    }}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <p className="mt-1 text-sm text-gray-900">{user.email}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Role</label>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.role === 'admin' 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {user.role === 'admin' ? '👑 Admin' : '👤 User'}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Member Since</label>
+                    <p className="mt-1 text-sm text-gray-900">{formatDate(user.createdAt)}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Last Updated</label>
+                    <p className="mt-1 text-sm text-gray-900">{formatDate(user.updatedAt)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Password Tab */}
+        {activeTab === 'password' && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-6">Change Password</h3>
+            <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+              <div>
+                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  id="currentPassword"
+                  name="currentPassword"
+                  value={passwordData.currentPassword}
+                  onChange={handlePasswordChange}
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-1 ${
+                    errors.currentPassword
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
+                  disabled={isSubmitting}
+                />
+                {errors.currentPassword && (
+                  <p className="mt-1 text-sm text-red-600">{errors.currentPassword}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  id="newPassword"
+                  name="newPassword"
+                  value={passwordData.newPassword}
+                  onChange={handlePasswordChange}
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-1 ${
+                    errors.newPassword
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
+                  disabled={isSubmitting}
+                />
+                {errors.newPassword && (
+                  <p className="mt-1 text-sm text-red-600">{errors.newPassword}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="confirmNewPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  id="confirmNewPassword"
+                  name="confirmNewPassword"
+                  value={passwordData.confirmNewPassword}
+                  onChange={handlePasswordChange}
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-1 ${
+                    errors.confirmNewPassword
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
+                  disabled={isSubmitting}
+                />
+                {errors.confirmNewPassword && (
+                  <p className="mt-1 text-sm text-red-600">{errors.confirmNewPassword}</p>
+                )}
+              </div>
+
+              {errors.password && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm text-red-700">{errors.password}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400"
+              >
+                {isSubmitting ? 'Changing...' : 'Change Password'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Statistics Tab */}
+        {activeTab === 'stats' && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-6">Study Statistics</h3>
+            {statsLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : userStats ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{userStats.totalFlashcards}</div>
+                  <div className="text-sm text-gray-600">Total Flashcards</div>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{userStats.totalReviews}</div>
+                  <div className="text-sm text-gray-600">Total Reviews</div>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-purple-600">{userStats.averageDifficulty}</div>
+                  <div className="text-sm text-gray-600">Average Difficulty</div>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-yellow-600">{userStats.reviewedCards}</div>
+                  <div className="text-sm text-gray-600">Cards Reviewed</div>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{userStats.unreviewedCards}</div>
+                  <div className="text-sm text-gray-600">New Cards</div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-2xl font-bold text-gray-600">{formatDate(userStats.lastStudySession)}</div>
+                  <div className="text-sm text-gray-600">Last Study</div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-600">No statistics available.</p>
+            )}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-6">Account Settings</h3>
+            <div className="space-y-6">
+              {/* Delete Account Section */}
+              <div className="border border-red-200 rounded-lg p-4">
+                <h4 className="text-lg font-medium text-red-600 mb-2">Danger Zone</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                  Once you delete your account, there is no going back. Please be certain.
+                </p>
                 <button
-                  onClick={handleLogout}
-                  className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
-                  Cerrar Sesión
+                  Delete Account
                 </button>
               </div>
             </div>
-          ) : (
-            // Edit Mode
-            <form onSubmit={handleUpdateProfile}>
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                    formErrors.email ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  disabled={isLoading}
-                  autoComplete="email"
-                />
-                {formErrors.email && (
-                  <p className="text-red-500 text-xs italic mt-1">{formErrors.email}</p>
-                )}
-              </div>
-              
-              <div className="flex space-x-3">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className={`bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ${
-                    isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {isLoading ? 'Guardando...' : 'Guardar Cambios'}
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  disabled={isLoading}
-                  className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-        
-        {/* Danger Zone */}
-        <div className="bg-red-50 border-t border-red-200 px-6 py-4">
-          <h3 className="text-lg font-medium text-red-800 mb-2">Zona Peligrosa</h3>
-          
-          {!showDeleteConfirm ? (
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-            >
-              Eliminar Cuenta
-            </button>
-          ) : (
-            <form onSubmit={handleDeleteAccount} className="space-y-4">
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                <p className="font-bold">¡Advertencia!</p>
-                <p>Esta acción no se puede deshacer. Se eliminarán todos tus datos permanentemente.</p>
-              </div>
-              
-              <div>
-                <label className="block text-red-700 text-sm font-bold mb-2" htmlFor="password">
-                  Confirma tu contraseña
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={deleteData.password}
-                  onChange={handleDeleteChange}
-                  className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                    formErrors.password ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  disabled={isLoading}
-                  autoComplete="current-password"
-                />
-                {formErrors.password && (
-                  <p className="text-red-500 text-xs italic mt-1">{formErrors.password}</p>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-red-700 text-sm font-bold mb-2" htmlFor="confirmDelete">
-                  Escribe "ELIMINAR" para confirmar
-                </label>
-                <input
-                  id="confirmDelete"
-                  name="confirmDelete"
-                  type="text"
-                  value={deleteData.confirmDelete}
-                  onChange={handleDeleteChange}
-                  className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${
-                    formErrors.confirmDelete ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  disabled={isLoading}
-                  placeholder="ELIMINAR"
-                />
-                {formErrors.confirmDelete && (
-                  <p className="text-red-500 text-xs italic mt-1">{formErrors.confirmDelete}</p>
-                )}
-              </div>
-              
-              <div className="flex space-x-3">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className={`bg-red-600 hover:bg-red-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ${
-                    isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {isLoading ? 'Eliminando...' : 'Confirmar Eliminación'}
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteConfirm(false);
-                    setDeleteData({ password: '', confirmDelete: '' });
-                    setFormErrors({});
-                  }}
-                  disabled={isLoading}
-                  className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Account Deletion</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Are you sure you want to delete your account? This action cannot be undone and all your flashcards will be permanently deleted.
+            </p>
+            {errors.delete && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-700">{errors.delete}</p>
+              </div>
+            )}
+            <div className="flex space-x-4">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-400"
+              >
+                {isSubmitting ? 'Deleting...' : 'Yes, Delete My Account'}
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
