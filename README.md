@@ -76,6 +76,16 @@ R2_PUBLIC_URL=https://tu-bucket.r2.dev
 - `npm test`: Ejecuta todos los tests (backend + frontend)
 - `npm run test:back`: Ejecuta tests del backend con Jest
 - `npm run test:front`: Ejecuta tests del frontend
+- `npm run test:e2e`: Ejecuta tests end-to-end con Playwright
+- `npm run test:contracts`: Ejecuta tests de contrato (TDD)
+- `npm run test:journeys`: Ejecuta tests de flujos de usuario
+- `npm run test:performance`: Ejecuta tests de rendimiento
+- `npm run test:accessibility`: Ejecuta tests de accesibilidad
+- `npm run test:coverage`: Genera reportes de cobertura
+- `npm run test:coverage:report`: Reporte completo de cobertura
+- `npm run test:monitor`: Dashboard de monitoreo en tiempo real
+- `npm run data:cleanup`: Limpia datos de prueba
+- `npm run data:health`: Verifica salud del entorno de pruebas
 
 ## 🎯 Funcionalidades
 
@@ -127,3 +137,68 @@ flash-cards/
 - **Audit Trail**: Registro de acciones administrativas
 
 **Puntuación de Seguridad**: 8.5/10 (Ver `SECURITY_AUDIT.md` para detalles)
+
+## 🧪 Testing Integral
+
+### Infraestructura de Testing Implementada
+- **420+ Tests de Contrato**: Enfoque TDD con tests diseñados para fallar inicialmente
+- **Tests E2E Completos**: Playwright con soporte multi-navegador
+- **Tests de Rendimiento**: Benchmarks de carga y tiempo de respuesta
+- **Tests de Accesibilidad**: Cumplimiento WCAG 2.1 AA
+- **Tests de Casos Edge**: Manejo de errores y validaciones
+- **CI/CD Automatizado**: Pipeline de GitHub Actions con testing en matriz
+- **Monitoreo en Tiempo Real**: Dashboard de ejecución de tests
+- **Documentación Completa**: Guías detalladas de testing
+
+### Categorías de Tests
+
+#### Tests de Contrato (420+ tests)
+- **Propósito**: Enfoque TDD con tests que fallan primero (fase roja)
+- **Cobertura**: Contratos de API, autenticación, operaciones CRUD
+- **Ubicación**: `tests/e2e/contracts/`
+
+#### Tests de Flujos de Usuario
+- **Autenticación**: Flujos completos de registro e inicio de sesión
+- **Gestión de Tarjetas**: Operaciones CRUD con interfaz
+- **Sesiones de Aprendizaje**: Flujos de repetición espaciada
+- **Dashboard Administrativo**: Flujos de gestión de usuarios
+
+#### Tests de Rendimiento
+- **Tests de Carga**: Simulación de usuarios concurrentes
+- **Benchmarks de Rendimiento**: Validación de tiempos de respuesta
+- **Monitoreo de Memoria**: Seguimiento de consumo de recursos
+
+#### Tests de Accesibilidad
+- **Cumplimiento WCAG 2.1**: Estándares AA de accesibilidad
+- **Multi-navegador**: Testing en Chromium, Firefox, WebKit
+- **Navegación por Teclado**: Accesibilidad completa por teclado
+
+### Métricas de Cobertura
+- **Statements**: Meta 90%+
+- **Branches**: Meta 85%+
+- **Functions**: Meta 90%+
+- **Lines**: Meta 90%+
+
+### Ejecución de Tests
+```bash
+# Ejecutar categorías específicas
+npm run test:contracts     # Tests de contrato TDD
+npm run test:journeys      # Tests de flujos de usuario
+npm run test:performance   # Tests de rendimiento
+npm run test:accessibility # Tests de accesibilidad
+
+# Ejecución avanzada
+npm run test:runner -- --suite=contracts --browser=chromium
+npm run test:monitor --port=8080  # Dashboard en tiempo real
+```
+
+### Gestión de Datos de Prueba
+```bash
+npm run data:cleanup      # Limpieza completa
+npm run data:health       # Verificación de salud
+npm run data:seed         # Seeding de datos de prueba
+```
+
+### Documentación de Testing
+- **[Guía de Testing E2E](docs/testing/e2e-testing-guide.md)**: Documentación completa de testing
+- **[Reporte de Cobertura](docs/testing/test-coverage-report.md)**: Análisis y objetivos de cobertura

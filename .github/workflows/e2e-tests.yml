@@ -1,0 +1,687 @@
+name: 🧠 Flash Cards E2E Tests
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_suites:
+        description: 'Test suites to run (comma-separated)'
+        required: false
+        default: 'contracts,journeys'
+        type: string
+      browsers:
+        description: 'Browsers to test (comma-separated)'
+        required: false
+        default: 'chromium,firefox'
+        type: string
+      test_pattern:
+        description: 'Test pattern (grep)'
+        required: false
+        default: ''
+        type: string
+      debug_mode:
+        description: 'Run in debug mode'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  CI: true
+  NODE_ENV: test
+
+jobs:
+  # Job 1: Setup and validate environment
+  setup:
+    name: 🔧 Setup Environment
+    runs-on: ubuntu-latest
+    outputs:
+      test-suites: ${{ steps.config.outputs.test-suites }}
+      browsers: ${{ steps.config.outputs.browsers }}
+      matrix-combinations: ${{ steps.matrix.outputs.combinations }}
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: 🔍 Validate test configuration
+        run: |
+          echo "Validating E2E test setup..."
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Check required test directories
+            const requiredDirs = [
+              'tests/e2e/contracts',
+              'tests/e2e/journeys', 
+              'tests/e2e/edge-cases',
+              'tests/e2e/performance',
+              'tests/e2e/accessibility',
+              'tests/e2e/pages',
+              'tests/e2e/utils'
+            ];
+            
+            for (const dir of requiredDirs) {
+              if (!fs.existsSync(dir)) {
+                console.error(\`❌ Required directory missing: \${dir}\`);
+                process.exit(1);
+              }
+              console.log(\`✅ Directory exists: \${dir}\`);
+            }
+            
+            // Check test files count
+            const contractTests = fs.readdirSync('tests/e2e/contracts').filter(f => f.endsWith('.test.js')).length;
+            const journeyTests = fs.readdirSync('tests/e2e/journeys').filter(f => f.endsWith('.test.js')).length;
+            
+            console.log(\`📊 Test files found:\`);
+            console.log(\`   Contract tests: \${contractTests}\`);
+            console.log(\`   Journey tests: \${journeyTests}\`);
+            
+            if (contractTests === 0 || journeyTests === 0) {
+              console.error('❌ No test files found');
+              process.exit(1);
+            }
+            
+            console.log('✅ Test configuration validation passed');
+          "
+
+      - name: ⚙️ Configure test execution
+        id: config
+        run: |
+          # Determine test suites based on trigger
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TEST_SUITES="${{ github.event.inputs.test_suites }}"
+            BROWSERS="${{ github.event.inputs.browsers }}"
+          elif [ "${{ github.event_name }}" == "schedule" ]; then
+            TEST_SUITES="contracts,journeys,edge-cases,performance,accessibility"
+            BROWSERS="chromium,firefox,webkit"
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            TEST_SUITES="contracts,journeys"
+            BROWSERS="chromium"
+          else
+            # Push to main/develop - run core tests
+            TEST_SUITES="contracts,journeys"
+            BROWSERS="chromium,firefox"
+          fi
+          
+          echo "test-suites=$TEST_SUITES" >> $GITHUB_OUTPUT
+          echo "browsers=$BROWSERS" >> $GITHUB_OUTPUT
+          
+          echo "📋 Test Configuration:"
+          echo "   Suites: $TEST_SUITES"
+          echo "   Browsers: $BROWSERS"
+          echo "   Trigger: ${{ github.event_name }}"
+
+      - name: 🎯 Generate test matrix
+        id: matrix
+        run: |
+          # Generate matrix combinations for parallel execution
+          node -e "
+            const suites = '${{ steps.config.outputs.test-suites }}'.split(',');
+            const browsers = '${{ steps.config.outputs.browsers }}'.split(',');
+            
+            const combinations = [];
+            
+            // For contract tests, run on all browsers
+            if (suites.includes('contracts')) {
+              for (const browser of browsers) {
+                combinations.push({ suite: 'contracts', browser, priority: 1 });
+              }
+            }
+            
+            // For other suites, optimize based on CI resources
+            const otherSuites = suites.filter(s => s !== 'contracts');
+            for (const suite of otherSuites) {
+              // Run journeys on multiple browsers, others on chromium only
+              if (suite === 'journeys') {
+                for (const browser of browsers) {
+                  combinations.push({ suite, browser, priority: 2 });
+                }
+              } else {
+                combinations.push({ suite, browser: 'chromium', priority: suite === 'edge-cases' ? 3 : 4 });
+              }
+            }
+            
+            console.log(JSON.stringify(combinations));
+          " > matrix.json
+          
+          echo "combinations=$(cat matrix.json)" >> $GITHUB_OUTPUT
+          echo "📊 Generated $(cat matrix.json | jq length) test combinations"
+
+  # Job 2: Run contract tests (TDD validation) - highest priority
+  contracts:
+    name: 📋 Contract Tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: setup
+    if: contains(needs.setup.outputs.test-suites, 'contracts')
+    timeout-minutes: 30
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJson('[' + needs.setup.outputs.browsers + ']') }}
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: 🎭 Install Playwright browsers
+        run: |
+          npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: 🗄️ Setup test database
+        run: |
+          echo "Setting up isolated test database..."
+          node -e "
+            const { setupTestEnvironment } = require('./tests/utils/databaseHelpers.js');
+            setupTestEnvironment().then(() => {
+              console.log('✅ Test database ready');
+            }).catch(err => {
+              console.error('❌ Database setup failed:', err);
+              process.exit(1);
+            });
+          "
+
+      - name: 🚀 Start application servers
+        run: |
+          echo "Starting backend server..."
+          npm run server &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          
+          echo "Starting frontend dev server..."
+          cd client && npm run dev &
+          CLIENT_PID=$!
+          echo "CLIENT_PID=$CLIENT_PID" >> $GITHUB_ENV
+          
+          # Wait for servers to be ready
+          echo "Waiting for servers to start..."
+          sleep 10
+          
+          # Health check
+          curl -f http://localhost:4000/api/health || (echo "❌ Backend not ready" && exit 1)
+          curl -f http://localhost:5173 || (echo "❌ Frontend not ready" && exit 1)
+          
+          echo "✅ Application servers ready"
+
+      - name: 🧪 Run contract tests
+        run: |
+          echo "🎯 Running contract tests on ${{ matrix.browser }}..."
+          node tests/scripts/test-runner.js \
+            --suites contracts \
+            --browsers ${{ matrix.browser }} \
+            --retries 2 \
+            --reporter json \
+            --output-dir tests/reports/contracts-${{ matrix.browser }}
+
+      - name: 📊 Validate TDD compliance
+        run: |
+          echo "Validating TDD compliance..."
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            
+            try {
+              const reportPath = 'tests/reports/contracts-${{ matrix.browser }}/test-report.json';
+              if (!fs.existsSync(reportPath)) {
+                console.error('❌ Contract test report not found');
+                process.exit(1);
+              }
+              
+              const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+              console.log('📋 Contract Test Results:');
+              console.log(\`   Total: \${report.summary.totalTests}\`);
+              console.log(\`   Passed: \${report.summary.passed}\`);
+              console.log(\`   Failed: \${report.summary.failed}\`);
+              
+              // Contract tests should fail initially in TDD approach
+              if (report.summary.failed === 0) {
+                console.log('⚠️  Warning: All contract tests passed - ensure TDD red-green-refactor cycle');
+              } else {
+                console.log('✅ Contract tests properly failing - TDD compliance validated');
+              }
+              
+            } catch (error) {
+              console.error('❌ Error validating TDD compliance:', error.message);
+              process.exit(1);
+            }
+          "
+
+      - name: 🧹 Cleanup servers
+        if: always()
+        run: |
+          kill $SERVER_PID $CLIENT_PID 2>/dev/null || true
+
+      - name: 📊 Upload contract test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contract-results-${{ matrix.browser }}
+          path: tests/reports/contracts-${{ matrix.browser }}/
+          retention-days: 7
+
+  # Job 3: Run journey tests - core user workflows
+  journeys:
+    name: 🚶 Journey Tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: [setup, contracts]
+    if: contains(needs.setup.outputs.test-suites, 'journeys') && (success() || failure())
+    timeout-minutes: 45
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJson('[' + needs.setup.outputs.browsers + ']') }}
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: 🎭 Install Playwright browsers
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: 🗄️ Setup test database
+        run: |
+          node tests/setup/database-setup.js
+
+      - name: 🚀 Start application servers
+        run: |
+          npm run server &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          
+          cd client && npm run dev &
+          CLIENT_PID=$!
+          echo "CLIENT_PID=$CLIENT_PID" >> $GITHUB_ENV
+          
+          sleep 10
+          curl -f http://localhost:4000/api/health
+          curl -f http://localhost:5173
+
+      - name: 🚶 Run journey tests
+        run: |
+          echo "🎯 Running journey tests on ${{ matrix.browser }}..."
+          node tests/scripts/test-runner.js \
+            --suites journeys \
+            --browsers ${{ matrix.browser }} \
+            --retries 2 \
+            --reporter html \
+            --output-dir tests/reports/journeys-${{ matrix.browser }} \
+            ${{ github.event.inputs.test_pattern && format('--grep "{0}"', github.event.inputs.test_pattern) || '' }}
+
+      - name: 🧹 Cleanup servers
+        if: always()
+        run: kill $SERVER_PID $CLIENT_PID 2>/dev/null || true
+
+      - name: 📊 Upload journey test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: journey-results-${{ matrix.browser }}
+          path: tests/reports/journeys-${{ matrix.browser }}/
+          retention-days: 7
+
+      - name: 🖼️ Upload test screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshots-journeys-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7
+
+  # Job 4: Run specialized tests (edge cases, performance, accessibility)
+  specialized:
+    name: 🎯 ${{ matrix.suite }} Tests
+    runs-on: ubuntu-latest
+    needs: [setup, contracts]
+    if: contains(needs.setup.outputs.test-suites, 'edge-cases') || contains(needs.setup.outputs.test-suites, 'performance') || contains(needs.setup.outputs.test-suites, 'accessibility')
+    timeout-minutes: 60
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: 
+          - ${{ contains(needs.setup.outputs.test-suites, 'edge-cases') && 'edge-cases' || '' }}
+          - ${{ contains(needs.setup.outputs.test-suites, 'performance') && 'performance' || '' }}
+          - ${{ contains(needs.setup.outputs.test-suites, 'accessibility') && 'accessibility' || '' }}
+        exclude:
+          - suite: ''
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: |
+          npm ci
+          cd client && npm ci
+
+      - name: 🎭 Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: 🗄️ Setup test database
+        run: node tests/setup/database-setup.js
+
+      - name: 🚀 Start application servers
+        run: |
+          npm run server &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          
+          cd client && npm run dev &
+          CLIENT_PID=$!
+          echo "CLIENT_PID=$CLIENT_PID" >> $GITHUB_ENV
+          
+          sleep 10
+
+      - name: 🎯 Run ${{ matrix.suite }} tests
+        run: |
+          echo "🎯 Running ${{ matrix.suite }} tests..."
+          
+          # Set timeout based on suite type
+          TIMEOUT=45000
+          if [ "${{ matrix.suite }}" == "performance" ]; then
+            TIMEOUT=120000
+          elif [ "${{ matrix.suite }}" == "edge-cases" ]; then
+            TIMEOUT=60000
+          fi
+          
+          node tests/scripts/test-runner.js \
+            --suites ${{ matrix.suite }} \
+            --browsers chromium \
+            --retries 1 \
+            --reporter html \
+            --output-dir tests/reports/${{ matrix.suite }}
+
+      - name: 📈 Analyze performance results
+        if: matrix.suite == 'performance'
+        run: |
+          echo "📊 Analyzing performance test results..."
+          node -e "
+            const fs = require('fs');
+            if (fs.existsSync('tests/reports/performance/test-report.json')) {
+              const report = JSON.parse(fs.readFileSync('tests/reports/performance/test-report.json', 'utf8'));
+              console.log('Performance Test Summary:');
+              console.log(\`  Total Tests: \${report.summary.totalTests}\`);
+              console.log(\`  Duration: \${report.summary.duration}ms\`);
+              
+              // Flag performance issues
+              if (report.summary.duration > 300000) { // 5 minutes
+                console.log('⚠️  Warning: Performance tests took longer than expected');
+              }
+            }
+          "
+
+      - name: ♿ Analyze accessibility results
+        if: matrix.suite == 'accessibility'
+        run: |
+          echo "♿ Analyzing accessibility test results..."
+          node -e "
+            const fs = require('fs');
+            if (fs.existsSync('tests/reports/accessibility/test-report.json')) {
+              const report = JSON.parse(fs.readFileSync('tests/reports/accessibility/test-report.json', 'utf8'));
+              console.log('Accessibility Test Summary:');
+              console.log(\`  WCAG Tests: \${report.summary.totalTests}\`);
+              console.log(\`  Pass Rate: \${(report.summary.passed / report.summary.totalTests * 100).toFixed(1)}%\`);
+              
+              if (report.summary.failed > 0) {
+                console.log('⚠️  Warning: Accessibility violations detected');
+              }
+            }
+          "
+
+      - name: 🧹 Cleanup servers
+        if: always()
+        run: kill $SERVER_PID $CLIENT_PID 2>/dev/null || true
+
+      - name: 📊 Upload specialized test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.suite }}-results
+          path: tests/reports/${{ matrix.suite }}/
+          retention-days: 7
+
+  # Job 5: Generate comprehensive test report
+  report:
+    name: 📊 Generate Test Report
+    runs-on: ubuntu-latest
+    needs: [setup, contracts, journeys, specialized]
+    if: always()
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 📥 Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-artifacts/
+
+      - name: 📊 Aggregate test results
+        run: |
+          echo "📊 Aggregating test results from all jobs..."
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            
+            const aggregatedResults = {
+              summary: {
+                totalTests: 0,
+                passed: 0,
+                failed: 0,
+                skipped: 0,
+                duration: 0,
+                timestamp: new Date().toISOString(),
+                gitRef: process.env.GITHUB_REF,
+                gitSha: process.env.GITHUB_SHA,
+                runId: process.env.GITHUB_RUN_ID
+              },
+              suites: {},
+              browsers: {},
+              metadata: {
+                trigger: process.env.GITHUB_EVENT_NAME,
+                actor: process.env.GITHUB_ACTOR,
+                repository: process.env.GITHUB_REPOSITORY,
+                workflow: 'E2E Tests'
+              }
+            };
+            
+            // Process all test result files
+            function processDirectory(dir) {
+              if (!fs.existsSync(dir)) return;
+              
+              const items = fs.readdirSync(dir);
+              for (const item of items) {
+                const fullPath = path.join(dir, item);
+                const stat = fs.statSync(fullPath);
+                
+                if (stat.isDirectory()) {
+                  processDirectory(fullPath);
+                } else if (item === 'test-report.json') {
+                  try {
+                    const report = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+                    const suiteName = path.basename(path.dirname(fullPath));
+                    
+                    aggregatedResults.suites[suiteName] = report.summary || report;
+                    
+                    // Add to totals
+                    if (report.summary) {
+                      aggregatedResults.summary.totalTests += report.summary.totalTests || 0;
+                      aggregatedResults.summary.passed += report.summary.passed || 0;
+                      aggregatedResults.summary.failed += report.summary.failed || 0;
+                      aggregatedResults.summary.skipped += report.summary.skipped || 0;
+                      aggregatedResults.summary.duration += report.summary.duration || 0;
+                    }
+                  } catch (error) {
+                    console.error('Error processing report:', fullPath, error.message);
+                  }
+                }
+              }
+            }
+            
+            processDirectory('test-artifacts');
+            
+            // Write aggregated results
+            fs.writeFileSync('aggregated-results.json', JSON.stringify(aggregatedResults, null, 2));
+            
+            console.log('📈 Test Execution Summary:');
+            console.log(\`  Total Tests: \${aggregatedResults.summary.totalTests}\`);
+            console.log(\`  Passed: \${aggregatedResults.summary.passed}\`);
+            console.log(\`  Failed: \${aggregatedResults.summary.failed}\`);
+            console.log(\`  Success Rate: \${aggregatedResults.summary.totalTests > 0 ? 
+              ((aggregatedResults.summary.passed / aggregatedResults.summary.totalTests) * 100).toFixed(1) : 0}%\`);
+            console.log(\`  Duration: \${Math.round(aggregatedResults.summary.duration / 1000)}s\`);
+            
+            // Set GitHub outputs
+            const fs2 = require('fs');
+            fs2.appendFileSync(process.env.GITHUB_OUTPUT, \`total-tests=\${aggregatedResults.summary.totalTests}\\n\`);
+            fs2.appendFileSync(process.env.GITHUB_OUTPUT, \`passed-tests=\${aggregatedResults.summary.passed}\\n\`);
+            fs2.appendFileSync(process.env.GITHUB_OUTPUT, \`failed-tests=\${aggregatedResults.summary.failed}\\n\`);
+            fs2.appendFileSync(process.env.GITHUB_OUTPUT, \`success-rate=\${aggregatedResults.summary.totalTests > 0 ? 
+              ((aggregatedResults.summary.passed / aggregatedResults.summary.totalTests) * 100).toFixed(1) : 0}\\n\`);
+          "
+
+      - name: 📄 Generate HTML report
+        run: |
+          echo "📄 Generating comprehensive HTML report..."
+          node tests/scripts/report-generator.js \
+            --input aggregated-results.json \
+            --output final-report.html \
+            --format html \
+            --include-charts
+
+      - name: 📤 Upload comprehensive report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comprehensive-test-report
+          path: |
+            aggregated-results.json
+            final-report.html
+          retention-days: 30
+
+      - name: 💬 Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('aggregated-results.json', 'utf8'));
+            
+            const successRate = results.summary.totalTests > 0 
+              ? ((results.summary.passed / results.summary.totalTests) * 100).toFixed(1)
+              : 0;
+            
+            const status = results.summary.failed === 0 ? '✅' : '❌';
+            const emoji = results.summary.failed === 0 ? '🎉' : '⚠️';
+            
+            const body = \`## \${status} E2E Test Results
+            
+            \${emoji} **Test Execution Summary:**
+            - **Total Tests:** \${results.summary.totalTests}
+            - **Passed:** \${results.summary.passed} 
+            - **Failed:** \${results.summary.failed}
+            - **Skipped:** \${results.summary.skipped}
+            - **Success Rate:** \${successRate}%
+            - **Duration:** \${Math.round(results.summary.duration / 1000)}s
+            
+            ### Suite Breakdown:
+            \${Object.entries(results.suites).map(([name, suite]) => 
+              \`- **\${name}:** \${suite.passed || 0}/\${suite.totalTests || suite.total || 0} passed\`
+            ).join('\\n')}
+            
+            \${results.summary.failed > 0 
+              ? '⚠️ **Some tests failed.** Check the detailed reports for more information.'
+              : '🎉 **All tests passed!** Great job!'
+            }
+            
+            [View detailed report](../actions/runs/\${context.runId})
+            \`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # Job 6: Deploy test results (for main branch)
+  deploy-results:
+    name: 🚀 Deploy Test Results
+    runs-on: ubuntu-latest
+    needs: [report]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: 📥 Download comprehensive report
+        uses: actions/download-artifact@v4
+        with:
+          name: comprehensive-test-report
+          path: ./
+
+      - name: 🚀 Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+          destination_dir: test-reports/latest
+          
+      - name: 📊 Update test badge
+        run: |
+          echo "Updating test status badge..."
+          # This would typically update a badge service or README

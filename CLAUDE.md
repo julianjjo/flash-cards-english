@@ -88,7 +88,10 @@ Deprecated (no longer needed):
 
 - Backend: Jest with supertest for API testing
 - Frontend: Jest with React Testing Library  
+- E2E Testing: Playwright with Jest for browser automation
 - Tests are located alongside source files (*.test.js, *.test.jsx)
+- E2E test suite covers: authentication flows, flashcard CRUD, spaced repetition, admin dashboard
+- Test database isolation using separate SQLite database for E2E tests
 - Comprehensive test coverage for Gemini TTS integration:
   - Unit tests: `server/services/gemini-tts.test.js`
   - Integration tests: `server/integration.test.js`
