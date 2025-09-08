@@ -1,0 +1,227 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Admin API Contract for E2E Testing",
+    "version": "1.0.0",
+    "description": "Contract specifications for admin dashboard functionality testing"
+  },
+  "paths": {
+    "/api/admin/users": {
+      "get": {
+        "summary": "Get all users (admin only)",
+        "tags": ["Admin"],
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Users retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUser"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - admin role required"
+          }
+        }
+      }
+    },
+    "/api/admin/users/{userId}": {
+      "get": {
+        "summary": "Get specific user details",
+        "tags": ["Admin"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - admin role required"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user account",
+        "tags": ["Admin"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User deleted successfully"
+          },
+          "404": {
+            "description": "User not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - admin role required"
+          }
+        }
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "summary": "Get system statistics",
+        "tags": ["Admin"],
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Statistics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - admin role required"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "admin"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "flashcard_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "AdminUserDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminUser"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "total_reviews": {
+                "type": "integer"
+              },
+              "last_login": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "avg_session_duration": {
+                "type": "number"
+              }
+            }
+          }
+        ]
+      },
+      "SystemStats": {
+        "type": "object",
+        "properties": {
+          "total_users": {
+            "type": "integer"
+          },
+          "active_users_today": {
+            "type": "integer"
+          },
+          "total_flashcards": {
+            "type": "integer"
+          },
+          "total_reviews": {
+            "type": "integer"
+          },
+          "avg_reviews_per_user": {
+            "type": "number"
+          },
+          "top_performing_users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "user_id": {
+                  "type": "integer"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "review_count": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

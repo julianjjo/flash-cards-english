@@ -1,0 +1,330 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Flashcards API Contract for E2E Testing",
+    "version": "1.0.0",
+    "description": "Contract specifications for flashcards CRUD operations testing"
+  },
+  "paths": {
+    "/api/flashcards": {
+      "get": {
+        "summary": "Get user's flashcards",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Flashcards retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flashcard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create new flashcard",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "english": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "spanish": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": ["english", "spanish"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Flashcard created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/flashcards/{id}": {
+      "get": {
+        "summary": "Get specific flashcard",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flashcard found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update flashcard",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "english": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "spanish": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Flashcard updated successfully"
+          },
+          "404": {
+            "description": "Flashcard not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete flashcard",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Flashcard deleted successfully"
+          },
+          "404": {
+            "description": "Flashcard not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/flashcards/{id}/review": {
+      "post": {
+        "summary": "Record flashcard review",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quality": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  }
+                },
+                "required": ["quality"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Review recorded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flashcard"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/flashcards/{id}/audio": {
+      "get": {
+        "summary": "Get TTS audio for flashcard",
+        "tags": ["Flashcards"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["english", "spanish"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audio URL returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "audioUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Flashcard not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Flashcard": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "english": {
+            "type": "string"
+          },
+          "spanish": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "integer"
+          },
+          "difficulty": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "last_reviewed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "review_count": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
